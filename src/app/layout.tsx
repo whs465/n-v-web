@@ -5,6 +5,11 @@ import { ReactNode } from 'react'
 export const metadata = {
   title: 'Visor NACHAM',
   description: 'Web app para ver el contenido de archivos NACHAM',
+    icons: {
+    icon: '/favicon.png',        
+    apple: '/favicon.png',       
+    shortcut: '/favicon.png'     
+  }
 }
 
 export default function RootLayout({ children }: { children: ReactNode }) {
