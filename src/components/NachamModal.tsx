@@ -66,8 +66,15 @@ export default function NachamModal({
                     dangerouslySetInnerHTML={{ __html: title }}
                 />
 
-                <div ref={tableContainerRef} className="overflow-x-auto overflow-y-auto max-h-80 mb-4">
-                    <table className="w-full border-collapse font-sans whitespace-nowrap">
+                <div ref={tableContainerRef} className="overflow-y-auto max-h-[60vh]">
+                    <table className="table-fixed w-full border-collapse font-sans whitespace-nowrap">
+                        <colgroup>
+                            <col style={{ width: '5%' }} />
+                            <col style={{ width: '35%' }} />
+                            <col style={{ width: '15%' }} />
+                            <col style={{ width: '15%' }} />
+                            <col style={{ width: '30%' }} />
+                        </colgroup>
                         <thead className="bg-[rgb(239,241,251)] text-[#2D77C2]">
                             <tr>
                                 <th className="py-2 px-3 border-b border-[#2D77C2] font-medium">#</th>
@@ -78,20 +85,20 @@ export default function NachamModal({
                             </tr>
                         </thead>
                         <tbody>
-                            {fields.map(f => (
+                            {fields.map((f, idx) => (
                                 <tr key={f.id} className="hover:bg-[rgb(228,242,251)] cursor-pointer">
-                                    <td className="py-1 px-3 border-b border-[#2D77C2]">{f.id}</td>
-                                    <td className="py-1 px-3 border-b border-[#2D77C2] text-left w-36">{f.name}</td>
+                                    <td className="py-1 px-3 border-b border-[#2D77C2] text-center">{f.id}</td>
+                                    <td className="py-1 px-3 border-b border-[#2D77C2] text-left">{f.name}</td>
                                     <td className="py-1 px-3 border-b border-[#2D77C2] text-center">{f.length}</td>
                                     <td className="py-1 px-3 border-b border-[#2D77C2] text-center">{f.position}</td>
-                                    <td className="py-2 px-3 border-b border-[#2D77C2] whitespace-pre">{f.value.replace(/ /g, '·')}</td>
+                                    <td className="py-2 px-3 border-b border-[#2D77C2] font-mono whitespace-pre">{f.value.replace(/ /g, '·')}</td>
                                 </tr>
                             ))}
                         </tbody>
                     </table>
                 </div>
 
-                <div className="flex items-center justify-between">
+                <div className="flex items-center py-2 justify-between">
                     <button
                         onClick={onPrev}
                         disabled={!canPrev}
