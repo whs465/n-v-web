@@ -24,6 +24,12 @@ export default function Page() {
   const [title, setTitle] = useState<string>('')
   const [showToast, setShowToast] = useState(false)
   const [toastFileName, setToastFileName] = useState('')
+  const [errorToast, setErrorToast] = useState<string | null>(null)
+
+  const showError = (msg: string) => {
+    setErrorToast(msg)
+    setTimeout(() => setErrorToast(null), 6000)
+  }
 
   // Encuentra el registro padre de tipo dado
   const findParentRecord = (idx: number, type: string): number | null => {
@@ -33,7 +39,6 @@ export default function Page() {
     return null
   }
 
-  // Parsea un registro en array de campos según su tipo
   // Parsea un registro según su tipo y devuelve array de campos
   const parseFields = (rec: string, idx: number): Field[] => {
     const type = rec.charAt(0)
@@ -155,9 +160,22 @@ export default function Page() {
     if (!input.files?.length) return
 
     const file = input.files[0]
+    const text = await file.text()
+    const recs = text.match(/.{1,106}/g) || []
+
+    // —— VALIDACIÓN NACHAM —— 
+    // Debe haber al menos un segundo registro, y de él extraer posiciones 41-50
+    if (
+      recs.length < 2 ||
+      recs[1].slice(40, 50) !== '8999990902'
+    ) {
+      showError('Archivo no es un NACHAM válido')
+      return
+    }
+    // —— FIN VALIDACIÓN ——     
+
     setFileName(file.name)           // **Actualiza el nombre**
     input.value = ''                 // permite volver a elegir el mismo archivo              // permite volver a elegir el mismo archivo
-    const text = await file.text()
     setPos320321(text.slice(319, 321))               // posiciones 320-321
     setRecords(text.match(/.{1,106}/g) || [])
   }
@@ -388,7 +406,7 @@ export default function Page() {
     setToastFileName(`${fileName || 'reporte'}.xlsx`)
     setShowToast(true)
     // Ocultarlo tras 4s:
-    setTimeout(() => setShowToast(false), 4000)
+    setTimeout(() => setShowToast(false), 6000)
   }
 
   const cerrarToast = () => setShowToast(false)
@@ -397,43 +415,57 @@ export default function Page() {
   return (
     <>
       {/* Toast de éxito */}
-<div
-  id="toast-exito"
-  className={`
-    fixed bottom-5 right-5 z-50 max-w-sm w-full
-    bg-green-600 text-white rounded-lg shadow-lg
-    border-l-8 border-green-900 flex p-4
-    transition-opacity duration-300
-    ${showToast ? 'opacity-100' : 'opacity-0 pointer-events-none'}
-  `}
->
-  <div className="mr-3 flex items-start">
-    <svg className="w-7 h-7 mt-0.5" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="12" fill="#2ecc71" />
-      <path d="M9.5 16L5 11.5L6.41 10.09L9.5 13.17L17.59 5.09L19 6.5L9.5 16Z" fill="white" />
-    </svg>
-  </div>
+      <div
+        id="toast-exito"
+        className={`
+          fixed bottom-5 right-5 z-50 max-w-sm w-full
+          bg-green-600 text-white rounded-lg shadow-lg
+          border-l-8 border-green-900 flex p-4
+          transition-opacity duration-300
+          ${showToast ? 'opacity-100' : 'opacity-0 pointer-events-none'}
+        `}
+      >
+        <div className="mr-3 flex items-start">
+          <svg className="w-7 h-7 mt-0.5" viewBox="0 0 24 24" fill="white" xmlns="http://www.w3.org/2000/svg">
+            <circle cx="12" cy="12" r="12" fill="#2ecc71" />
+            <path d="M9.5 16L5 11.5L6.41 10.09L9.5 13.17L17.59 5.09L19 6.5L9.5 16Z" fill="white" />
+          </svg>
+        </div>
 
-  {/* Contenido */}
-  <div className="flex-1 text-sm">
-    <p className="font-semibold text-base leading-tight">Exito Total</p>
-    <p className="mt-1 leading-snug">
-      El archivo:<br />
-      <span className="break-words">{toastFileName}</span><br />
-      ha sido generado con éxito.
-    </p>
-  </div>
+        {/* Contenido */}
+        <div className="flex-1 text-sm">
+          <p className="font-semibold text-base leading-tight">Exito Total</p>
+          <p className="mt-1 leading-snug">
+            El archivo:<br />
+            <span className="break-words">{toastFileName}</span><br />
+            ha sido generado con éxito.
+          </p>
+        </div>
 
-  {/* Botón cerrar en la esquina superior derecha */}
-  <button
-    onClick={cerrarToast}
-    className="absolute top-2 right-2 text-white hover:text-gray-200 focus:outline-none"
-    aria-label="Cerrar"
-  >
-    &times;
-  </button>
-</div>
-
+        {/* Botón cerrar en la esquina superior derecha */}
+        <button
+          onClick={cerrarToast}
+          className="absolute top-2 right-2 text-white hover:text-gray-200 focus:outline-none"
+          aria-label="Cerrar"
+        >
+          &times;
+        </button>
+      </div>
+      
+      {errorToast && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-red-600 text-white rounded-lg shadow-lg border-l-8 border-red-900 flex p-4">
+          <div className="flex-1 text-sm">
+            <p className="font-semibold text-base leading-tight">Error</p>
+            <p className="mt-1">{errorToast}</p>
+          </div>
+          <button
+            onClick={() => setErrorToast(null)}
+            className="absolute top-2 right-2 text-white hover:text-gray-200 focus:outline-none"
+            aria-label="Cerrar"
+          >&times;</button>
+        </div>
+      )}
+      
       {/* ==== HEADER ==== */}
       <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
         <div className="max-w-[1000px] mx-auto flex items-center justify-between py-2 px-4">
