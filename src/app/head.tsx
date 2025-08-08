@@ -1,10 +1,11 @@
+import Script from 'next/script'
 export default function Head() {
     return (
         <>
             <link rel="icon" type="image/png" href="/favicon.png" />
             <title>Visor NACHAM</title>
             
-            <script
+            <Script
                 id="taggogle"
                 strategy="afterInteractive"
                 dangerouslySetInnerHTML={{
