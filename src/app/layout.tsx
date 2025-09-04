@@ -33,7 +33,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           `,
         }}
       />
-      <body className="bg-gray-100 text-gray-800 overflow-y-scroll">
+      <body className="bg-gray-100 text-gray-800 overflow-y-scroll bg-triple-calido">
         <div className="w-full max-w-[1070px] mx-auto min-h-screen flex flex-col">
           {/* Contenido principal */}
           <main className="flex-grow pt-6 px-6 pb-16">

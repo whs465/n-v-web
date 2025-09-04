@@ -78,3 +78,7 @@ body {
 .animate-heart {
   animation: heart 1.4s infinite;
 }
+
+.bg-triple-calido {
+  background: linear-gradient(135deg, #ffd50047 0%, #004c934b 60%, #dc003041 100%);
+}
