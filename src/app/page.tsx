@@ -217,10 +217,10 @@ export default function Page() {
         // Aviso, pero NO bloqueamos la vista
         showError('El archivo no es un NACHAM válido (vista solamente).')
       }
-      if (!multiple106) {
-        showError('El número de caracteres del archivo no es múltiplo de 106. Revise desde la fila resaltada.')
-      } else if (badRows.length) {
+      if (badRows.length) {
         showError('Se detectaron registros con tipo inválido. Revise filas resaltadas.')
+      } else if (!multiple106) {
+        showError('El número de caracteres del archivo no es múltiplo de 106. Revise desde la fila resaltada.')
       }
 
     } catch (err) {
