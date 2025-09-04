@@ -25,6 +25,12 @@ export default function Page() {
   const [showToast, setShowToast] = useState(false)
   const [toastFileName, setToastFileName] = useState('')
   const [errorToast, setErrorToast] = useState<string | null>(null)
+  const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
+  const [isLenMultiple106, setIsLenMultiple106] = useState<boolean>(true)
+  // primer índice donde detectamos un problema “de ahí en adelante”
+  const [badFromIndex, setBadFromIndex] = useState<number | null>(null)
+  // filas puntuales con error de tipo (primer carácter inválido)
+  const [badRowSet, setBadRowSet] = useState<Set<number>>(new Set())
 
   const showError = (msg: string) => {
     setErrorToast(msg)
@@ -160,24 +166,69 @@ export default function Page() {
     if (!input.files?.length) return
 
     const file = input.files[0]
-    const text = await file.text()
-    const recs = text.match(/.{1,106}/g) || []
 
-    // —— VALIDACIÓN NACHAM —— 
-    // Debe haber al menos un segundo registro, y de él extraer posiciones 41-50
-    if (
-      recs.length < 2 ||
-      recs[1].slice(40, 50) !== '8999990902'
-    ) {
-      showError('Archivo no es un NACHAM válido')
-      return
+    try {
+      let text = await file.text()
+      text = text.replace(/^\uFEFF/, '') // quita BOM
+      const compact = text.replace(/\r?\n/g, '')
+      const recs = compact.match(/.{106}/g) || []
+
+      // ——— checks ———
+      const validStart = new Set(['1', '5', '6', '7', '8', '9'])
+      const badRows: number[] = []
+
+      recs.forEach((r, i) => {
+        if (!validStart.has(r[0])) badRows.push(i)
+      })
+
+      // ¿La longitud total es múltiplo de 106?
+      const multiple106 = (compact.length % 106) === 0
+
+      // ¿Desde qué fila “pintamos” el fondo como guía?
+      // 1) si NO es múltiplo de 106: el primer índice incompleto sería Math.floor(compact.length/106)
+      // 2) si sí es múltiplo pero hay filas con primer char inválido: desde el primer badRows[0]
+      let fromIdx: number | null = null
+      if (!multiple106) {
+        fromIdx = Math.floor(compact.length / 106) // donde "empieza" el bloque incompleto
+      } else if (badRows.length > 0) {
+        fromIdx = badRows[0]
+      }
+
+      // set de filas problemáticas por primer carácter inválido
+      setBadRowSet(new Set(badRows))
+      setIsLenMultiple106(multiple106)
+      setBadFromIndex(fromIdx)
+
+      // ¿Hay suficiente data para validar?
+      let valid = false
+      if (recs.length >= 2) {
+        const firma = recs[1].slice(40, 50) // pos. 41–50 (0-based 40..49)
+        valid = (firma === '8999990902')
+      }
+
+      // Siempre mostramos el archivo:
+      setFileName(file.name)
+      input.value = '' // permitir re-seleccionar mismo archivo
+      setPos320321(compact.slice(319, 321))
+      setRecords(recs)
+      setIsNachamValid(valid)
+
+      if (!valid) {
+        // Aviso, pero NO bloqueamos la vista
+        showError('El archivo no es un NACHAM válido (vista solamente).')
+      }
+      if (!multiple106) {
+        showError('El número de caracteres del archivo no es múltiplo de 106. Revise desde la fila resaltada.')
+      } else if (badRows.length) {
+        showError('Se detectaron registros con tipo inválido. Revise filas resaltadas.')
+      }
+
+    } catch (err) {
+      console.error(err)
+      showError('No se pudo leer el archivo')
+      input.value = ''
+      setIsNachamValid(null)
     }
-    // —— FIN VALIDACIÓN ——     
-
-    setFileName(file.name)           // **Actualiza el nombre**
-    input.value = ''                 // permite volver a elegir el mismo archivo              // permite volver a elegir el mismo archivo
-    setPos320321(text.slice(319, 321))               // posiciones 320-321
-    setRecords(text.match(/.{1,106}/g) || [])
   }
 
   // Abre la modal con title + fields según el tipo de record
@@ -188,7 +239,7 @@ export default function Page() {
     let ttl = ''
 
     if (type === '1') {
-      ttl = `🌟 Cabecera de Archivo`
+      ttl = `🌟 Registro de Encabezado de Archivo`
       flds = [
         { id: 1, name: "Tipo de Registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
         { id: 2, name: "Código de Prioridad", length: 2, position: "2-3", value: rec.slice(1, 3) },
@@ -209,7 +260,7 @@ export default function Page() {
     else if (type === '5') {
       const ts = rec.slice(50, 53).trim()
       const desc = rec.slice(53, 63).trim()
-      ttl = `✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+      ttl = `🌟 Registro de Encabezado de Lote</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
       flds = [
         { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
         { id: 2, name: "Código clase de transacción por lote", length: 3, position: "2-4", value: rec.slice(1, 4) },
@@ -234,7 +285,7 @@ export default function Page() {
         const pr = records[pi]
         const ts = pr.slice(50, 53).trim()
         const desc = pr.slice(53, 63).trim()
-        ttl = `✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+        ttl = `🌟 Registro de Detalle de Transacciones</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
       }
       flds = [
         { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
@@ -257,7 +308,7 @@ export default function Page() {
         const pr = records[pi]
         const ts = pr.slice(50, 53).trim()
         const desc = pr.slice(53, 63).trim()
-        ttl = `✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+        ttl = `🌟 Registro de Adenda de Transacción</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
       }
       if (position320321 === '99') {
         flds = [
@@ -294,7 +345,7 @@ export default function Page() {
         const pr = records[pi]
         const ts = pr.slice(50, 53).trim()
         const desc = pr.slice(53, 63).trim()
-        ttl = `✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+        ttl = `🌟 Registro de Control de Lote</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
       }
       flds = [
         { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
@@ -311,7 +362,7 @@ export default function Page() {
       ]
     }
     else if (type === '9') {
-      ttl = `🏁 Pie de Archivo`
+      ttl = `🌟 Registro de Control de Archivo`
       flds = [
         { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
         { id: 2, name: "Cantidad de Lotes", length: 6, position: "2-7", value: rec.slice(1, 7) },
@@ -337,6 +388,10 @@ export default function Page() {
   // Exporta registros “6” con sus adendas “7” inmediatas, omitiendo la columna “Tipo de registro”
   const exportExcel = () => {
     if (!records.length) return
+    if (isNachamValid !== true) {
+      showError('No se puede exportar: el archivo no es un NACHAM válido.')
+      return
+    }
 
     // 1) Índices de todos los registros tipo “6”
     const type6Indices = records
@@ -451,7 +506,7 @@ export default function Page() {
           &times;
         </button>
       </div>
-      
+
       {errorToast && (
         <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-red-600 text-white rounded-lg shadow-lg border-l-8 border-red-900 flex p-4">
           <div className="flex-1 text-sm">
@@ -465,7 +520,7 @@ export default function Page() {
           >&times;</button>
         </div>
       )}
-      
+
       {/* ==== HEADER ==== */}
       <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
         <div className="max-w-[1000px] mx-auto flex items-center justify-between py-2 px-4">
@@ -476,14 +531,25 @@ export default function Page() {
             {/* Nombre de archivo + icono de export */}
             {fileName && (
               <div className="flex items-center text-gray-700 text-sm truncate max-w-xs">
-                <span>{fileName}</span>
-                <button
-                  type="button"
-                  onClick={exportExcel}
-                  className="ml-2 p-1 hover:bg-gray-200 rounded cursor-pointer"
-                  title="Exportar a Excel"
-                  dangerouslySetInnerHTML={{ __html: svgExportIcono }}
-                />
+                <span className="truncate">{fileName}</span>
+
+                {/* Badge si NO es válido */}
+                {isNachamValid === false && (
+                  <span className="ml-2 px-2 py-0.5 text-xs rounded bg-red-100 text-red-700 border border-red-300">
+                    no NACHAM
+                  </span>
+                )}
+
+                {/* Botón Exportar sólo si es válido */}
+                {isNachamValid === true && (
+                  <button
+                    type="button"
+                    onClick={exportExcel}
+                    className="ml-2 p-1 hover:bg-gray-200 rounded cursor-pointer"
+                    title="Exportar a Excel"
+                    dangerouslySetInnerHTML={{ __html: svgExportIcono }}
+                  />
+                )}
               </div>
             )}
 
@@ -522,6 +588,8 @@ export default function Page() {
               height={Math.floor(window.innerHeight * 0.8)}
               onRowClick={handleRowClick}
               selectedIndex={isOpen ? currentIndex : undefined}
+              badFromIndex={badFromIndex} // null o número
+              badRows={[...badRowSet]}
             /></div>
         ) : (
           <p className="text-gray-600">Asegurese de que carga un NACHAM en formato válido</p>

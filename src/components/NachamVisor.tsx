@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { FixedSizeList as List } from 'react-window'
 
 interface NachamVisorProps {
@@ -9,6 +9,8 @@ interface NachamVisorProps {
     height?: number
     onRowClick: (index: number) => void
     selectedIndex?: number
+    badFromIndex?: number | null
+    badRows?: number[] // filas con primer carácter inválido
 }
 
 export default function NachamVisor({
@@ -17,15 +19,17 @@ export default function NachamVisor({
     height = 600,
     onRowClick,
     selectedIndex,
+    badFromIndex = null,
+    badRows = [],
 }: NachamVisorProps) {
     const listRef = useRef<List>(null)
 
+    // Set para lookup O(1)
+    const badRowSet = useMemo(() => new Set(badRows), [badRows])
+
     // Cuando cambia selectedIndex, hacemos scroll para que se vea
     useEffect(() => {
-        if (
-            typeof selectedIndex === 'number' &&
-            listRef.current !== null
-        ) {
+        if (typeof selectedIndex === 'number' && listRef.current) {
             listRef.current.scrollToItem(selectedIndex, 'auto')
         }
     }, [selectedIndex])
@@ -39,20 +43,24 @@ export default function NachamVisor({
     }) => {
         const rec = records[index]
         const isSelected = index === selectedIndex
+        const isBadStart = badRowSet.has(index)
+        const paintFromHere = badFromIndex !== null && index >= badFromIndex
+        const baseZebra = index % 2 ? 'bg-gray-50' : 'bg-white'
+        // prioridad: seleccionado > error puntual > guía desde índice > zebra
+        const rowBg = isSelected
+            ? 'selected-row'
+            : isBadStart
+                ? 'bg-red-200'
+                : paintFromHere
+                    ? 'bg-red-50'
+                    : baseZebra
 
         return (
             <div
                 style={style}
-                className={`
-          flex font-mono whitespace-pre overflow-hidden
-          ${isSelected
-                        ? 'selected-row'
-                        : index % 2
-                            ? 'bg-gray-50'
-                            : 'bg-white'
-                    }
-        `}
+                className={`flex font-mono whitespace-pre overflow-hidden hover:bg-[rgb(228,242,251)] cursor-pointer ${rowBg}`}
                 onClick={() => onRowClick(index)}
+                title={isBadStart ? 'Tipo de registro inválido' : undefined}
             >
                 {rec.split('').map((ch, i) => (
                     <span key={i}>{ch}</span>
