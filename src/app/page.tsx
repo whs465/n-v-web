@@ -24,7 +24,8 @@ export default function Page() {
   const [title, setTitle] = useState<string>('')
   const [showToast, setShowToast] = useState(false)
   const [toastFileName, setToastFileName] = useState('')
-  const [errorToast, setErrorToast] = useState<string | null>(null)
+  const [errorOpen, setErrorOpen] = useState(false)
+  const [errorMessages, setErrorMessages] = useState<string[]>([])
   const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
   const [isLenMultiple106, setIsLenMultiple106] = useState<boolean>(true)
   // primer índice donde detectamos un problema “de ahí en adelante”
@@ -32,9 +33,13 @@ export default function Page() {
   // filas puntuales con error de tipo (primer carácter inválido)
   const [badRowSet, setBadRowSet] = useState<Set<number>>(new Set())
 
-  const showError = (msg: string) => {
-    setErrorToast(msg)
-    setTimeout(() => setErrorToast(null), 6000)
+  const showError = (msg: string) => showErrors([msg])
+
+  const showErrors = (msgs: string[]) => {
+    if (!msgs.length) return
+    setErrorMessages(msgs)
+    setErrorOpen(true)
+    setTimeout(() => setErrorOpen(false), 5000)
   }
 
   // Encuentra el registro padre de tipo dado
@@ -106,9 +111,10 @@ export default function Page() {
     } else if (type === '7') {
       // Recupera el título desde el padre tipo 5 (igual que en la modal)
       const pi = findParentRecord(idx, '5')
+      let ts = ''
       if (pi !== null) {
         const pr = records[pi]
-        const ts = pr.slice(50, 53).trim()
+        ts = pr.slice(50, 53).trim()
         const desc = pr.slice(53, 63).trim()
         // Si necesitas devolver ttl aquí, hazlo; parseFields solo devuelve campos
         // ttl = `✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} …`
@@ -128,7 +134,22 @@ export default function Page() {
           { id: 8, name: "Número de Secuencia del Registro Adenda", length: 15, position: "82-96", value: rec.slice(81, 96) },
           { id: 9, name: "Reservado", length: 10, position: "97-106", value: rec.slice(96, 106) },
         ]
-      } else {
+      }
+      else if (position320321 === '05' && ts === 'CTX') {
+        flds = [
+          { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
+          { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
+          { id: 3, name: "Código EAN 13 o NIT", length: 13, position: "4-16", value: rec.slice(3, 16) },
+          { id: 4, name: "Descripción del servicio", length: 15, position: "17-31", value: rec.slice(16, 31) },
+          { id: 5, name: "Número de referencia de factura", length: 20, position: "32-51", value: rec.slice(31, 51) },
+          { id: 6, name: "Valor factura", length: 18, position: "52-69", value: rec.slice(51, 69) },
+          { id: 7, name: "Reservado", length: 14, position: "70-83", value: rec.slice(69, 83) },
+          { id: 8, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
+          { id: 9, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
+          { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
+        ]
+      }
+      else {
         flds = [
           { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
           { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
@@ -169,65 +190,65 @@ export default function Page() {
 
     try {
       let text = await file.text()
-      text = text.replace(/^\uFEFF/, '') // quita BOM
+      text = text.replace(/^\uFEFF/, '')
       const compact = text.replace(/\r?\n/g, '')
       const recs = compact.match(/.{106}/g) || []
 
-      // ——— checks ———
+      const msgs: string[] = []
+
+      // 1) múltiplo de 106
+      const multiple106 = (compact.length % 106) === 0
+      if (!multiple106) {
+        msgs.push('El número de caracteres del archivo no es múltiplo de 106.')
+      }
+
+      // 2) tipos válidos en primer carácter
       const validStart = new Set(['1', '5', '6', '7', '8', '9'])
       const badRows: number[] = []
-
-      recs.forEach((r, i) => {
-        if (!validStart.has(r[0])) badRows.push(i)
-      })
-
-      // ¿La longitud total es múltiplo de 106?
-      const multiple106 = (compact.length % 106) === 0
-
-      // ¿Desde qué fila “pintamos” el fondo como guía?
-      // 1) si NO es múltiplo de 106: el primer índice incompleto sería Math.floor(compact.length/106)
-      // 2) si sí es múltiplo pero hay filas con primer char inválido: desde el primer badRows[0]
-      let fromIdx: number | null = null
-      if (!multiple106) {
-        fromIdx = Math.floor(compact.length / 106) // donde "empieza" el bloque incompleto
-      } else if (badRows.length > 0) {
-        fromIdx = badRows[0]
+      recs.forEach((r, i) => { if (!validStart.has(r[0])) badRows.push(i) })
+      if (badRows.length) {
+        msgs.push(`Se detectaron ${badRows.length} registro(s) con tipo inválido (columna 1).`)
       }
 
-      // set de filas problemáticas por primer carácter inválido
+      // 3) firma NACHAM en 2º registro pos 41–50
+      let firmaOk = false
+      if (recs.length >= 2) {
+        const firma = recs[1].slice(40, 50)
+        firmaOk = (firma === '8999990902')
+        if (!firmaOk) {
+          msgs.push('El segundo registro no contiene la firma NACHAM (pos. 41–50 ≠ 8999990902).')
+        }
+      } else {
+        msgs.push('Archivo inválido: faltan registros para validar la firma (se requiere al menos 2).')
+      }
+
+      // Marcado visual en el visor
+      const fromIdx = !multiple106
+        ? Math.floor(compact.length / 106)
+        : (badRows.length ? badRows[0] : null)
+
       setBadRowSet(new Set(badRows))
-      setIsLenMultiple106(multiple106)
       setBadFromIndex(fromIdx)
 
-      // ¿Hay suficiente data para validar?
-      let valid = false
-      if (recs.length >= 2) {
-        const firma = recs[1].slice(40, 50) // pos. 41–50 (0-based 40..49)
-        valid = (firma === '8999990902')
-      }
-
-      // Siempre mostramos el archivo:
+      // Carga normal (no bloqueamos vista)
       setFileName(file.name)
-      input.value = '' // permitir re-seleccionar mismo archivo
+      input.value = ''
       setPos320321(compact.slice(319, 321))
       setRecords(recs)
-      setIsNachamValid(valid)
 
-      if (!valid) {
-        // Aviso, pero NO bloqueamos la vista
-        showError('El archivo no es un NACHAM válido (vista solamente).')
-      }
-      if (badRows.length) {
-        showError('Se detectaron registros con tipo inválido. Revise filas resaltadas.')
-      } else if (!multiple106) {
-        showError('El número de caracteres del archivo no es múltiplo de 106. Revise desde la fila resaltada.')
-      }
+      // ✅ Estado de validez global (para el icono de export y demás)
+      const isValid = multiple106 && badRows.length === 0 && firmaOk
+      setIsNachamValid(isValid)
+
+      if (msgs.length) showErrors(msgs)
 
     } catch (err) {
       console.error(err)
-      showError('No se pudo leer el archivo')
+      showErrors(['No se pudo leer el archivo.'])
       input.value = ''
-      setIsNachamValid(null)
+      setBadRowSet(new Set())
+      setBadFromIndex(null)
+      setIsNachamValid(null) // indeterminado por error
     }
   }
 
@@ -304,9 +325,10 @@ export default function Page() {
     }
     else if (type === '7') {
       const pi = findParentRecord(idx, '5')
+      let ts = ''
       if (pi !== null) {
         const pr = records[pi]
-        const ts = pr.slice(50, 53).trim()
+        ts = pr.slice(50, 53).trim()
         const desc = pr.slice(53, 63).trim()
         ttl = `🌟 Registro de Adenda de Transacción</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
       }
@@ -321,6 +343,19 @@ export default function Page() {
           { id: 7, name: "Información Adicional", length: 44, position: "38-81", value: rec.slice(37, 81) },
           { id: 8, name: "Número de Secuencia del Registro Adenda", length: 15, position: "82-96", value: rec.slice(81, 96) },
           { id: 9, name: "Reservado", length: 10, position: "97-106", value: rec.slice(96, 106) },
+        ]
+      } else if (position320321 === '05' && ts === 'CTX') {
+        flds = [
+          { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
+          { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
+          { id: 3, name: "Código EAN 13 o NIT", length: 13, position: "4-16", value: rec.slice(3, 16) },
+          { id: 4, name: "Descripción del servicio", length: 15, position: "17-31", value: rec.slice(16, 31) },
+          { id: 5, name: "Número de referencia de factura", length: 20, position: "32-51", value: rec.slice(31, 51) },
+          { id: 6, name: "Valor factura", length: 18, position: "52-69", value: rec.slice(51, 69) },
+          { id: 7, name: "Reservado", length: 14, position: "70-83", value: rec.slice(69, 83) },
+          { id: 8, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
+          { id: 9, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
+          { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
         ]
       } else {
         flds = [
@@ -507,19 +542,36 @@ export default function Page() {
         </button>
       </div>
 
-      {errorToast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-red-600 text-white rounded-lg shadow-lg border-l-8 border-red-900 flex p-4">
-          <div className="flex-1 text-sm">
-            <p className="font-semibold text-base leading-tight">Error</p>
-            <p className="mt-1">{errorToast}</p>
-          </div>
+      {/* Toast de errores (lista) – NO afecta layout */}
+      {errorOpen && (
+        <div
+          className="
+      fixed bottom-5 right-5 z-[9999]
+      max-w-sm w-[90vw] sm:w-[24rem]
+      bg-red-600 text-white rounded-lg shadow-lg
+      border-l-8 border-red-900 p-4
+      transition-opacity duration-900
+    "
+          role="alert"
+        >
           <button
-            onClick={() => setErrorToast(null)}
-            className="absolute top-2 right-2 text-white hover:text-gray-200 focus:outline-none"
+            onClick={() => setErrorOpen(false)}
+            className="absolute top-2 right-2 text-white/90 hover:text-white text-xl leading-none"
             aria-label="Cerrar"
-          >&times;</button>
+          >
+            &times;
+          </button>
+
+          <p className="font-semibold text-base leading-tight mb-1">Errores detectados</p>
+          <ul className="list-disc pl-5 text-sm space-y-1">
+            {errorMessages.map((m, i) => (<li key={i}>{m}</li>))}
+          </ul>
+          <p className="text-xs mt-2 opacity-90">
+            El archivo se muestra en modo vista para facilitar la revisión.
+          </p>
         </div>
       )}
+
 
       {/* ==== HEADER ==== */}
       <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
@@ -541,13 +593,17 @@ export default function Page() {
                 )}
 
                 {/* Botón Exportar sólo si es válido */}
-                {isNachamValid === true && (
+                {fileName && (
                   <button
                     type="button"
-                    onClick={exportExcel}
-                    className="ml-2 p-1 hover:bg-gray-200 rounded cursor-pointer"
-                    title="Exportar a Excel"
+                    onClick={isNachamValid === true
+                      ? exportExcel
+                      : () => showErrors(['No se puede exportar: el archivo no es NACHAM válido.'])}
+                    className={`ml-2 p-1 rounded ${isNachamValid === true ? 'hover:bg-gray-200 cursor-pointer' : 'opacity-40 cursor-not-allowed'
+                      }`}
+                    title={isNachamValid === true ? 'Exportar a Excel' : 'Exportación deshabilitada'}
                     dangerouslySetInnerHTML={{ __html: svgExportIcono }}
+                    aria-disabled={isNachamValid !== true}
                   />
                 )}
               </div>
