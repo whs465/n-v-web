@@ -88,14 +88,14 @@ export default function NachamVisor({
 
             const t = typeAt(s)
             if (t === 'error') bg = 'bg-rose-200/80 underline decoration-rose-500'
-            else if (t === 'ok') bg = 'bg-green-100/50'
-            else if (t === 'info') bg = 'bg-sky-100/60'
+            else if (t === 'ok') bg = 'bg-green-100/70 underline decoration-green-400'
+            else if (t === 'info') bg = 'bg-gray-100/60'
 
             // — NUEVO — Borde separador a la derecha para todos los segmentos marcados
             // (incluidos errores consecutivos). No afecta a segmentos sin marca.
             let sep = ''
             if (t === 'error') sep = 'border-r border-rose-500/60'
-            else if (t === 'ok') sep = 'border-r border-green-600/30'
+            else if (t === 'ok') sep = 'border-r border-green-600/40'
             else if (t === 'info') sep = 'border-r border-sky-600/30'
             // Si no hay marca (t undefined), dejamos sin borde.
 

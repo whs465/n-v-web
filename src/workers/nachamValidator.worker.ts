@@ -43,16 +43,28 @@ const toBig = (s: string) => BigInt((s || '').trim() || '0')
 const pad3 = (n: number) => (n < 10 ? `00${n}` : n < 100 ? `0${n}` : String(n))
 
 // Convierte BigInt en centavos a "1234.56" (solo texto)
-const fmtCentsTxt = (n: bigint) => {
-    const s = n.toString();
-    const neg = s.startsWith('-');
-    let t = neg ? s.slice(1) : s;
-    if (t.length <= 2) t = t.padStart(3, '0');
-    const i = t.slice(0, -2);
-    const d = t.slice(-2);
-    return (neg ? '-' : '') + i + '.' + d;
-}
+export const fmtCentsTxt = (
+    cents: bigint | number | string,
+    thousandSep = ',',
+    decimalSep = '.'
+): string => {
+    // a BigInt siempre, sin perder precisión
+    let bi = typeof cents === 'bigint' ? cents : BigInt(String(cents));
 
+    const sign = bi < 0n ? '-' : '';
+    if (bi < 0n) bi = -bi;
+
+    // parte entera y fracción (2 decimales)
+    const intPart = bi / 100n;
+    const fracPart = (bi % 100n).toString().padStart(2, '0');
+
+    // formateo de miles sobre string (no Number)
+    let s = intPart.toString();
+    // inserta thousandSep cada 3
+    s = s.replace(/\B(?=(\d{3})+(?!\d))/g, thousandSep);
+
+    return `${sign}${s}${decimalSep}${fracPart}`;
+}
 // helper para progreso
 const postProgress = (pct: number) =>
     post({ type: 'progress', pct } satisfies WorkerOutMsg);
@@ -438,7 +450,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 1, end: 7, type: 'ok',
-                note: `Lotes correctos (${expLots})`
+                note: `Lotes OK (${expLots})`
             });
         }
 
@@ -452,7 +464,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 7, end: 13, type: 'ok',
-                note: `Bloques correctos (${expBlocks})`
+                note: `Bloques OK (${expBlocks})`
             });
         }
 
@@ -466,7 +478,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 13, end: 21, type: 'ok',
-                note: `Trans/Adenda correctos (${expTranAd})`
+                note: `Trans/Adenda OK (${fmt(expTranAd)})`
             });
         }
 
@@ -480,7 +492,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 21, end: 31, type: 'ok',
-                note: `Totales de Control correctos (${expCtrl.toString()})`
+                note: `Totales Control OK (${fmt(expCtrl.toString())})`
             });
         }
 
@@ -489,12 +501,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 31, end: 49, type: 'error',
-                note: `Débitos: esperado ${fmtCentsTxt(expDeb)}, declarado ${fmtCentsTxt(decDeb)}`
+                note: `Débitos: esperado ${fmtCentsTxt(expDeb, ',', '.')}, declarado ${fmtCentsTxt(decDeb, ',', '.')}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 31, end: 49, type: 'ok',
-                note: `Débitos correctos (${fmtCentsTxt(expDeb)})`
+                note: `Débitos OK (${fmtCentsTxt(expDeb, ',', '.')})`
             });
         }
 
@@ -503,12 +515,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 49, end: 67, type: 'error',
-                note: `Créditos: esperado ${fmtCentsTxt(expCred)}, declarado ${fmtCentsTxt(decCred)}`
+                note: `Créditos: esperado ${fmtCentsTxt(expCred, ',', '.')}, declarado ${fmtCentsTxt(decCred, ',', '.')}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 49, end: 67, type: 'ok',
-                note: `Créditos correctos (${fmtCentsTxt(expCred)})`
+                note: `Créditos OK (${fmtCentsTxt(expCred, ',', '.')})`
             });
         }
 

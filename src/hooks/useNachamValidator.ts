@@ -41,7 +41,7 @@ export function useNachamValidator() {
                 setProgress(e.data.pct ?? 0)
             }
             if (type === 'done') {
-                console.log('[worker] Termino!', e.data)
+                console.log('[worker] Papi, terminé!', e.data)
                 const p = e.data as DonePayload & { type: 'done' }
                 setLineStatus(p.lineStatus)
                 setLineReason(p.lineReason)

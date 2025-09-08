@@ -72,10 +72,10 @@ export default function Page() {
         })
     }
 
-    const scheduleClose = (id: number, delay: number) => {
+    const scheduleClose = useCallback((id: number, delay: number) => {
         const timer = window.setTimeout(() => removeToast(id), delay)
         setToasts(prev => prev.map(t => t.id === id ? { ...t, timer, startAt: Date.now(), remaining: delay } : t))
-    }
+    }, [])
 
     const pauseToast = (id: number) => {
         setToasts(prev => prev.map(t => {
@@ -102,7 +102,7 @@ export default function Page() {
         })
     }
 
-    const showErrors = (msgs: string[], duration = 8000) => {
+    const showErrors = useCallback((msgs: string[], duration = 8000) => {
         const base = duration
         const items = msgs.map(text => {
             const id = toastIdRef.current++
@@ -115,32 +115,32 @@ export default function Page() {
                 startAt: Date.now(),
             }
         })
-        // agregar y programar cierres
         setToasts(prev => {
             const next = [...prev, ...items]
-            // programar timers tras setState
             requestAnimationFrame(() => {
                 items.forEach(it => scheduleClose(it.id, it.duration))
             })
             return next
         })
-    }
+    }, [scheduleClose, setToasts])
 
     const showError = (msg: string) => showErrors([msg])
 
-    // memo: primer índice de un registro '9' (el único válido); los demás 9 son relleno
-    const firstNineIndex = useMemo(
-        () => records.findIndex(r => r?.charAt(0) === '9'),
+    const firstNineIdx = useMemo(
+        () => records.findIndex(r => r?.[0] === '9'),
         [records]
-    );
+    )
 
-    // permitir click en 1,5,6,7,8 y SOLO en el primer '9'
-    const isRecordTypeClickable = (idx: number) => {
-        const t = records[idx]?.charAt(0);
-        if (!t) return false;
-        if (t === '9') return idx === firstNineIndex; // otros 9 => ignorar
-        return t === '1' || t === '5' || t === '6' || t === '7' || t === '8';
-    };
+    const isClickable = useCallback((idx: number) => {
+        const t = records[idx]?.[0]
+        if (!t) return false
+
+        // Sólo permitir el primer 9; bloquear los 9 de relleno
+        if (t === '9') return idx === firstNineIdx
+
+        // Tipos válidos que sí abren modal
+        return t === '1' || t === '5' || t === '6' || t === '7' || t === '8'
+    }, [records, firstNineIdx])
 
     // Del nombre "0001683.007.1.XXX" => "007"
     const extractSerialFromName = (name: string): string | undefined => {
@@ -162,14 +162,132 @@ export default function Page() {
         resetValidator()
     }
 
-    // Buscar padre (para modales)
-    const findParentRecord = (idx: number, type: string): number | null => {
-        for (let i = idx - 1; i >= 0; i--) if (records[i][0] === type) return i
-        return null
+    // === Parse de campos (idéntico a tus definiciones previas) ===
+
+    useEffect(() => {
+        if (isValidating) return
+        if (!lineStatus?.length) return
+        console.log('[ui] validation DONE. Num Registros=', records.length,
+            'lineStatus=', lineStatus.length,
+            'globalErrors=', globalErrors)
+    }, [isValidating, lineStatus, globalErrors, records.length])
+
+    // === Cargar archivo + preflight + lanzar worker ===
+    const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const input = e.currentTarget
+        if (!input.files?.length) return
+
+        hardResetUI()
+
+        const file = input.files[0]
+        try {
+            let text = await file.text()
+            text = text.replace(/^\uFEFF/, '')
+            const compact = text.replace(/\r?\n/g, '')
+            const recs = compact.match(/.{106}/g) || []
+
+            setFileName(file.name)
+            input.value = ''
+            setRecords(recs)
+
+            const msgs: string[] = []
+
+            // 1) múltiplo de 106
+            const multiple106 = (compact.length % 106) === 0
+            if (!multiple106) msgs.push('El número de caracteres del archivo no es múltiplo de 106.')
+
+            // 2) firma en Tipo 1 pos 14–23 => slice(13,23).trim()
+            let firmaOk = false
+            const r0 = recs[0] // string | undefined
+
+            if (typeof r0 === 'string') {
+                const isType1 = r0[0] === '1'
+                const firma14_23 = r0.slice(14, 23) // pos 14–23
+                firmaOk = (isType1 && firma14_23 === '000016832')
+                if (!firmaOk) {
+                    msgs.push('El archivo no contiene la firma esperada.')
+                }
+            } else {
+                msgs.push('Archivo inválido: faltan registros para validar la firma del tipo 1.')
+            }
+
+            // 3) tipos válidos en primer carácter
+            const validStart = new Set(['1', '5', '6', '7', '8', '9'])
+            const badRows: number[] = []
+            recs.forEach((r, i) => { if (!validStart.has(r[0])) badRows.push(i) })
+            if (badRows.length) msgs.push(`Se detectaron ${badRows.length} registro(s) con tipo de registro inválido (caracter  1).`)
+
+            // Sombras de guía
+            let fromIdx: number | null = null
+            if (!multiple106) {
+                fromIdx = Math.floor(compact.length / 106)
+            } else if (!firmaOk) {
+                fromIdx = 0 // la firma ahora se valida en el registro 1
+            } else if (badRows.length) {
+                fromIdx = badRows[0]
+            }
+            setBadRowSet(new Set(badRows))
+            setBadFromIndex(fromIdx)
+
+            // Estado rápido para export
+            const preflightOk = multiple106 && firmaOk && badRows.length === 0
+            setIsNachamValid(preflightOk)
+
+            if (!preflightOk) {
+                if (msgs.length) showErrors(msgs, 10000)
+                return
+            }
+
+            // Lanza validación pesada
+            //console.log('[ui] validateText len=', compact.length)
+            validateText(compact, {
+                checkTransCount: true,
+                checkCreditos: true,
+                checkDebitos: true,
+                checkTotalesControl: true,
+                includeAdendasInTrans: true,
+                serialFromName: extractSerialFromName(file.name),
+            })
+
+            if (msgs.length) showErrors(msgs, 10000)
+        } catch (err) {
+            console.error(err)
+            showErrors(['No se pudo leer el archivo.'], 8000)
+            input.value = ''
+            setBadRowSet(new Set())
+            setBadFromIndex(null)
+            setIsNachamValid(null)
+        }
     }
 
-    // === Parse de campos (idéntico a tus definiciones previas) ===
-    const parseFields = (rec: string, idx: number): Field[] => {
+    useEffect(() => {
+        if (globalErrors.length) showErrors(globalErrors, 10000)
+    }, [globalErrors, showErrors])
+
+    // 1) Índice del PRIMER registro 9 real (los demás 9 son relleno)
+    const firstNineIndex = useMemo(
+        () => records.findIndex(r => r?.charAt(0) === '9'),
+        [records]
+    )
+
+    // 2) Encontrar el '5' padre hacia atrás
+    const findParentRecord = useCallback((idx: number, type: '5') => {
+        for (let i = idx - 1; i >= 0; i--) {
+            if (records[i]?.charAt(0) === type) return i
+        }
+        return null
+    }, [records])
+
+    // 3) ¿Se puede abrir la modal para este índice?
+    const isRecordTypeClickable = useCallback((idx: number) => {
+        const t = records[idx]?.charAt(0)
+        if (!t) return false
+        if (t === '9') return idx === firstNineIndex // sólo el primer 9
+        return t === '1' || t === '5' || t === '6' || t === '7' || t === '8'
+    }, [records, firstNineIndex])
+
+    // 4) Parsear campos para la modal (usa lo que necesites en deps)
+    const parseFields = useCallback((rec: string, idx: number) => {
         const type = rec.charAt(0)
         let flds: Field[] = []
         if (type === '1') {
@@ -297,107 +415,9 @@ export default function Page() {
             ]
         }
         return flds
-    }
+    }, [records,findParentRecord])
 
-    useEffect(() => {
-        if (isValidating) return
-        if (!lineStatus?.length) return
-        console.log('[ui] validation DONE. Num Registros=', records.length,
-            'lineStatus=', lineStatus.length,
-            'globalErrors=', globalErrors)
-    }, [isValidating, lineStatus, globalErrors, records.length])
 
-    // === Cargar archivo + preflight + lanzar worker ===
-    const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-        const input = e.currentTarget
-        if (!input.files?.length) return
-
-        hardResetUI()
-
-        const file = input.files[0]
-        try {
-            let text = await file.text()
-            text = text.replace(/^\uFEFF/, '')
-            const compact = text.replace(/\r?\n/g, '')
-            const recs = compact.match(/.{106}/g) || []
-
-            setFileName(file.name)
-            input.value = ''
-            setRecords(recs)
-
-            const msgs: string[] = []
-
-            // 1) múltiplo de 106
-            const multiple106 = (compact.length % 106) === 0
-            if (!multiple106) msgs.push('El número de caracteres del archivo no es múltiplo de 106.')
-
-            // 2) firma en Tipo 1 pos 14–23 => slice(13,23).trim()
-            let firmaOk = false
-            const r0 = recs[0] // string | undefined
-
-            if (typeof r0 === 'string') {
-                const isType1 = r0[0] === '1'
-                const firma14_23 = r0.slice(14, 23) // pos 14–23
-                firmaOk = (isType1 && firma14_23 === '000016832')
-                if (!firmaOk) {
-                    msgs.push('El archivo no contiene la firma esperada.')
-                }
-            } else {
-                msgs.push('Archivo inválido: faltan registros para validar la firma del tipo 1.')
-            }
-
-            // 3) tipos válidos en primer carácter
-            const validStart = new Set(['1', '5', '6', '7', '8', '9'])
-            const badRows: number[] = []
-            recs.forEach((r, i) => { if (!validStart.has(r[0])) badRows.push(i) })
-            if (badRows.length) msgs.push(`Se detectaron ${badRows.length} registro(s) con tipo de registro inválido (caracter  1).`)
-
-            // Sombras de guía
-            let fromIdx: number | null = null
-            if (!multiple106) {
-                fromIdx = Math.floor(compact.length / 106)
-            } else if (!firmaOk) {
-                fromIdx = 0 // la firma ahora se valida en el registro 1
-            } else if (badRows.length) {
-                fromIdx = badRows[0]
-            }
-            setBadRowSet(new Set(badRows))
-            setBadFromIndex(fromIdx)
-
-            // Estado rápido para export
-            const preflightOk = multiple106 && firmaOk && badRows.length === 0
-            setIsNachamValid(preflightOk)
-
-            if (!preflightOk) {
-                if (msgs.length) showErrors(msgs, 10000)
-                return
-            }
-
-            // Lanza validación pesada
-            //console.log('[ui] validateText len=', compact.length)
-            validateText(compact, {
-                checkTransCount: true,
-                checkCreditos: true,
-                checkDebitos: true,
-                checkTotalesControl: true,
-                includeAdendasInTrans: true,
-                serialFromName: extractSerialFromName(file.name),
-            })
-
-            if (msgs.length) showErrors(msgs, 10000)
-        } catch (err) {
-            console.error(err)
-            showErrors(['No se pudo leer el archivo.'], 8000)
-            input.value = ''
-            setBadRowSet(new Set())
-            setBadFromIndex(null)
-            setIsNachamValid(null)
-        }
-    }
-
-    useEffect(() => {
-        if (globalErrors.length) showErrors(globalErrors, 10000)
-    }, [globalErrors])
 
     // === Modal (click) ===
     const handleRowClick = useCallback((idx: number) => {
@@ -453,7 +473,7 @@ export default function Page() {
         setFields(flds)
         setCurrent(idx)
         setIsOpen(true)
-    }, [records])
+    }, [records, isRecordTypeClickable, parseFields, findParentRecord])
 
     const closeModal = () => setIsOpen(false)
     const showPrev = () => currentIndex > 0 && handleRowClick(currentIndex - 1)
@@ -594,12 +614,7 @@ export default function Page() {
                             badRows={[...badRowSet]}
                             lineStatus={lineStatus}
                             lineMarks={lineMarks}
-                            isClickable={(idx, rec) => {
-                                const firstChar = rec[0]
-                                if (!'15678'.includes(firstChar)) return false
-                                if (firstChar === '9' && idx > 0) return false // solo 1er registro 9 es válido
-                                return true
-                            }}
+                            isClickable={isClickable}
                         />
                     </div>
                 ) : (
