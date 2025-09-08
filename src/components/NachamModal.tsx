@@ -85,7 +85,7 @@ export default function NachamModal({
                             </tr>
                         </thead>
                         <tbody>
-                            {fields.map((f, idx) => (
+                            {fields.map((f) => (
                                 <tr key={f.id} className="hover:bg-[rgb(228,242,251)] cursor-pointer">
                                     <td className="py-1 px-3 border-b border-[#2D77C2] text-center">{f.id}</td>
                                     <td className="py-1 px-3 border-b border-[#2D77C2] text-left">{f.name}</td>

@@ -1,7 +1,7 @@
 'use client'
 // src/hooks/useNachamValidator.ts
 import { useEffect, useRef, useState } from 'react'
-import type { LineStatus, LineMark, ValidationOptions } from '@/types/nacham'
+import type { LineStatus, LineMark } from '@/types/nacham'
 
 type DonePayload = {
     lineStatus: ('ok' | 'error' | undefined)[]

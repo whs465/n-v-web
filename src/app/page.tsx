@@ -26,20 +26,10 @@ export default function Page() {
 
     const [fileName, setFileName] = useState<string>('')
     const [records, setRecords] = useState<string[]>([])
-    const [position320321, setPos320321] = useState<string>('')
     const [isOpen, setIsOpen] = useState(false)
     const [currentIndex, setCurrent] = useState(0)
     const [fields, setFields] = useState<Field[]>([])
     const [title, setTitle] = useState<string>('')
-
-    // Toast éxito
-    const [showToast, setShowToast] = useState(false)
-    const [toastFileName, setToastFileName] = useState('')
-
-    // Toast errores
-    const [errorOpen, setErrorOpen] = useState(false)
-    const [errorMessages, setErrorMessages] = useState<string[]>([])
-    const errorTimerRef = useRef<number | null>(null)
 
     // Valid/invalid quick state (preflight)
     const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
@@ -136,21 +126,7 @@ export default function Page() {
         })
     }
 
-    const showSuccess = (msg: string, duration = 5000) => {
-        const id = toastIdRef.current++
-        const item: ToastItem = { id, text: msg, variant: 'success', duration, remaining: duration, startAt: Date.now() }
-        setToasts(prev => {
-            const next = [...prev, item]
-            requestAnimationFrame(() => scheduleClose(id, duration))
-            return next
-        })
-    }
-
     const showError = (msg: string) => showErrors([msg])
-    const cerrarToast = () => setShowToast(false)
-
-    // Tipos válidos que sí pueden abrir modal
-    const validStarts = new Set(['1', '5', '6', '7', '8'])
 
     // memo: primer índice de un registro '9' (el único válido); los demás 9 son relleno
     const firstNineIndex = useMemo(
@@ -176,31 +152,9 @@ export default function Page() {
     const marksExist =
         Array.isArray(lineMarks) && lineMarks.some(m => Array.isArray(m) && m.length > 0)
 
-    const errorMarksCount = marksExist
-        ? lineMarks!.reduce((acc, marks = []) => {
-            const uniq = new Set(
-                marks
-                    .filter(m => m?.type === 'error')
-                    .map(m => `${m.start}-${m.end}`)
-            )
-            return acc + uniq.size
-        }, 0)
-        : 0
-
-    const fallbackLineErrors =
-        !marksExist && Array.isArray(lineStatus)
-            ? lineStatus.filter(s => s === 'error').length
-            : 0
-
     const errCount = (lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
         + (globalErrors?.length ?? 0);
     const isOk = !isValidating && isNachamValid !== false && (lineStatus?.length ?? 0) > 0 && errCount === 0
-
-    const hasErrors =
-        (globalErrors?.length ?? 0) > 0 ||
-        (marksExist
-            ? lineMarks!.some(marks => marks?.some?.(mm => mm?.type === 'error'))
-            : (Array.isArray(lineStatus) && lineStatus.includes('error')))
 
     // === Reset duro antes de cargar otro archivo ===
     const hardResetUI = () => {
@@ -373,7 +327,6 @@ export default function Page() {
 
             setFileName(file.name)
             input.value = ''
-            setPos320321(compact.slice(319, 321))
             setRecords(recs)
 
             const msgs: string[] = []
@@ -556,10 +509,6 @@ export default function Page() {
         const wb = XLSX.utils.book_new()
         XLSX.utils.book_append_sheet(wb, ws, 'Datos')
         XLSX.writeFile(wb, `${fileName || 'reporte'}.xlsx`, { bookType: 'xlsx' })
-
-        setToastFileName(`${fileName || 'reporte'}.xlsx`)
-        setShowToast(true)
-        setTimeout(() => setShowToast(false), 6000)
     }
 
     return (

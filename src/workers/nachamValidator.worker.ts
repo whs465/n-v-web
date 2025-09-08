@@ -13,20 +13,6 @@ const defaultOptions: Required<ValidationOptions> = {
 // Definición local para evitar conflictos
 type LineMark = { start: number; end: number; type: MarkKind; note?: string }
 
-type WorkerInMsg =
-    | { type: 'validate-file'; buffer: ArrayBuffer; options?: ValidationOptions }
-    | { type: 'validate-text'; text: string; options?: ValidationOptions }
-
-type WorkerOutMsg =
-    | { type: 'progress'; pct: number }
-    | {
-        type: 'done'
-        lineStatus: LineStatus[]
-        lineReason: (string | undefined)[]
-        globalErrors: string[]
-        lineMarks?: LineMark[][]
-    }
-
 // ===== mensajes =====
 type InMsg =
     | { type: 'validate-file'; buffer: ArrayBuffer }
