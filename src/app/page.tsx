@@ -148,10 +148,6 @@ export default function Page() {
         return parts.length >= 2 ? parts[1] : undefined;
     }
 
-    // === Conteo de errores (sin duplicados) + OK badge ===
-    const marksExist =
-        Array.isArray(lineMarks) && lineMarks.some(m => Array.isArray(m) && m.length > 0)
-
     const errCount = (lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
         + (globalErrors?.length ?? 0);
     const isOk = !isValidating && isNachamValid !== false && (lineStatus?.length ?? 0) > 0 && errCount === 0

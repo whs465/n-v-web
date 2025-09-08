@@ -14,19 +14,28 @@ const defaultOptions: Required<ValidationOptions> = {
 type LineMark = { start: number; end: number; type: MarkKind; note?: string }
 
 // ===== mensajes =====
-type InMsg =
-    | { type: 'validate-file'; buffer: ArrayBuffer }
-    | { type: 'validate-text'; text: string }
+type WorkerInMsg =
+    | { type: 'validate-file'; buffer: ArrayBuffer; options?: ValidationOptions }
+    | { type: 'validate-text'; text: string; options?: ValidationOptions }
 
-type OutMsg =
+type WorkerOutMsg =
     | { type: 'progress'; pct: number }
     | {
         type: 'done'
         lineStatus: LineStatus[]
         lineReason: (string | undefined)[]
         globalErrors: string[]
-        lineMarks: LineMark[][]
+        lineMarks?: LineMark[][]
     }
+
+// Extensión opcional para avisar “corté en prechecks”
+type WorkerDoneMsg = WorkerOutMsg & { precheckFailed?: boolean }
+
+// ✅ Tipar el contexto del worker (nada de `any`)
+declare const self: DedicatedWorkerGlobalScope
+
+// Helper para postear mensajes tipados (sin any)
+const post = (m: WorkerOutMsg | WorkerDoneMsg) => self.postMessage(m)
 
 // ===== helpers =====
 const validStart = new Set(['1', '5', '6', '7', '8', '9'])
@@ -43,6 +52,10 @@ const fmtCentsTxt = (n: bigint) => {
     const d = t.slice(-2);
     return (neg ? '-' : '') + i + '.' + d;
 }
+
+// helper para progreso
+const postProgress = (pct: number) =>
+    post({ type: 'progress', pct } satisfies WorkerOutMsg);
 
 // Secuencia cíclica para el identificador (A..Z 0..9)
 const SECUENCIA = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
@@ -117,7 +130,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
     // --- Identificador (Tipo 1 pos 36) vs serial de nombre de archivo ---
     // options.serialFromName debe traerse desde la UI
-    const serialFromName: string | undefined = opts.serialFromName
+    const serialFromName = opts.serialFromName // <- opts = { ...defaultOptions, ...options }
+
     const expectedId = calcIdentFromSerial(serialFromName)
 
     // ===== ACUMULADORES / CONTADORES A NIVEL ARCHIVO =====
@@ -174,13 +188,22 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     }
     if (badTypes.length) globalErrors.push(`Se detectaron ${badTypes.length} registro(s) con tipo inválido (columna 1).`)
 
-    // si falló algo, devolvés y salís
     if (globalErrors.length) {
-        (self as any).postMessage({
+        post({ type: 'progress', pct: 100 } satisfies WorkerOutMsg)
+
+        const emptyStatus: LineStatus[] = Array(recsCount).fill(undefined)
+        const emptyReason: (string | undefined)[] = Array(recsCount).fill(undefined)
+        const emptyMarks: LineMark[][] = Array.from({ length: recsCount }, () => [])
+
+        post({
             type: 'done',
-            lineStatus: new Array(recsCount), lineReason: new Array(recsCount),
-            globalErrors, lineMarks: Array.from({ length: recsCount }, () => [])
-        })
+            lineStatus: emptyStatus,
+            lineReason: emptyReason,
+            globalErrors,
+            lineMarks: emptyMarks,
+            precheckFailed: true,
+        } as WorkerDoneMsg)
+
         return
     }
 
@@ -379,7 +402,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         }
 
         if (i % step === 0) {
-            ; (self as any).postMessage({ type: 'progress', pct: Math.floor((i / Math.max(1, recsCount)) * 100) } as OutMsg)
+            const pct = Math.floor((i / Math.max(1, recsCount)) * 100);
+            postProgress(pct);
         }
     }
 
@@ -495,19 +519,25 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         globalErrors.push('No se encontró el primer registro 9 (trailer).');
     }
 
-    ; (self as any).postMessage({ type: 'progress', pct: 100 } as OutMsg)
-        ; (self as any).postMessage({ type: 'done', lineStatus, lineReason, globalErrors, lineMarks } as OutMsg)
+    postProgress(100);
+    post({
+        type: 'done',
+        lineStatus,
+        lineReason,
+        globalErrors,
+        lineMarks,
+    } satisfies WorkerOutMsg);
 }
 
 // ===== wiring =====
-self.onmessage = (e: MessageEvent<InMsg>) => {
+self.onmessage = (e: MessageEvent<WorkerInMsg>) => {
     const msg = e.data
     if (msg.type === 'validate-file') {
         const text = new TextDecoder('utf-8').decode(msg.buffer)
         const compact = text.replace(/^\uFEFF/, '').replace(/\r?\n/g, '')
-        validateCompact(compact, (msg as any).options || {})
+        validateCompact(compact, msg.options ?? {})
     } else if (msg.type === 'validate-text') {
         const compact = msg.text.replace(/^\uFEFF/, '').replace(/\r?\n/g, '')
-        validateCompact(compact, (msg as any).options || {})
+        validateCompact(compact, msg.options ?? {})
     }
 }
