@@ -26,6 +26,7 @@ type WorkerOutMsg =
         lineReason: (string | undefined)[]
         globalErrors: string[]
         lineMarks?: LineMark[][]
+        isDevolucion?: boolean
     }
 
 // Extensión opcional para avisar “corté en prechecks”
@@ -35,7 +36,8 @@ type WorkerDoneMsg = WorkerOutMsg & { precheckFailed?: boolean }
 declare const self: DedicatedWorkerGlobalScope
 
 // Helper para postear mensajes tipados (sin any)
-const post = (m: WorkerOutMsg | WorkerDoneMsg) => self.postMessage(m)
+const ctx = self as unknown as DedicatedWorkerGlobalScope
+const post = (msg: WorkerOutMsg): void => { ctx.postMessage(msg) }
 
 // ===== helpers =====
 const validStart = new Set(['1', '5', '6', '7', '8', '9'])
@@ -151,14 +153,15 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             const emptyReason = new Array<string | undefined>(recsCount)
             const emptyMarks = Array.from({ length: recsCount }, () => [] as LineMark[])
 
-                ; (self as any).postMessage({ type: 'progress', pct: 100 })
-                ; (self as any).postMessage({
-                    type: 'done',
-                    lineStatus: emptyStatus,
-                    lineReason: emptyReason,
-                    globalErrors: [],       // ← sin errores
-                    lineMarks: emptyMarks,  // ← sin marcas
-                } as WorkerOutMsg)
+            post({ type: 'progress', pct: 100 })
+            post({
+                type: 'done',
+                lineStatus: emptyStatus,
+                lineReason: emptyReason,
+                globalErrors: [],       // ← sin errores
+                lineMarks: emptyMarks,  // ← sin marcas
+                isDevolucion: true,
+            } as WorkerOutMsg)
             return
         }
     }
@@ -166,7 +169,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
     // — LOTE: ID 5 vs 8 y secuencia global de lotes —
     let currentLotId5: string | null = null;   // concat 84–98 del reg 5 (8+7)
-    let currentLotSeq5: number | null = null;  // sólo el sufijo de 7 dígitos del reg 5
     let lastLotSeq: number | null = null;      // secuencia global (entre lotes)
 
     // — Adendas por REG 6 —
