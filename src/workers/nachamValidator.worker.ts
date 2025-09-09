@@ -271,6 +271,9 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let sumCred = BigInt(0)
     let sumControl = BigInt(0)
 
+    let countDeb6 = 0
+    let countCred6 = 0
+
     let lotRec6Code: string | null = null
     let lotRec6Mismatch = false
 
@@ -385,12 +388,20 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 }
             }
 
-
             fileCount6++
             // Valor de la transacción 30–47 => slice(29,47) → en CENTAVOS
             const val = toCents(r.slice(29, 47))
-            // si querés distinguir débitos/créditos, ajustá aquí según tu regla
-            sumCred += val
+
+            // Clase 2–3 => slice(1,3). Si es 27/37/55 => DÉBITO, de lo contrario CRÉDITO
+            const cls = r.slice(1, 3)
+            const isDebit = (cls === '27' || cls === '37' || cls === '55')
+            if (isDebit) {
+                sumDeb += val
+                countDeb6++
+            } else {
+                sumCred += val
+                countCred6++
+            }
 
             count6++
 
@@ -661,7 +672,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             const gotTrans = count6 + count7;
 
             const checks: string[] = [];
-            let okTrans = true, okDeb = true, okCred = true, okCtrl = true;
+            let ok = true
+            let okTrans = true, okCred = true, okCtrl = true;
 
             // Transacciones
             if (gotTrans !== declaredTrans) {
@@ -678,36 +690,56 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 });
             }
 
-            // Débitos
-            if (sumDeb !== declaredDeb) {
-                okDeb = false;
-                checks.push(`Débitos esperados ${fmtMoney(declaredDeb)} ≠ suma ${fmtMoney(sumDeb)}`);
+            const okDeb = (sumDeb === declaredDeb)
+            if (!okDeb) {
+                ok = false
+                checks.push(`Débitos esperados ${fmtMoney(declaredDeb)} ≠ suma ${fmtMoney(sumDeb)}`)
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'error',
                     note: `Débitos ❌ Esperado: ${fmtMoney(declaredDeb)}, Suma: ${fmtMoney(sumDeb)}`
-                });
+                })
             } else {
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'ok',
                     note: `Débitos ✅ (${fmtMoney(declaredDeb)})`
-                });
+                })
             }
 
-            // Créditos
-            if (sumCred !== declaredCred) {
-                okCred = false;
-                checks.push(`Créditos esperados ${fmtMoney(declaredCred)} ≠ suma ${fmtMoney(sumCred)}`);
-                pushUnique(lineMarks[i], {
-                    start: 38, end: 56, type: 'error',
-                    note: `Créditos ❌ Esperado: ${fmtMoney(declaredCred)}, Suma: ${fmtMoney(sumCred)}`
-                });
+            // --- Créditos (39–56) ---
+            // Regla nueva: si el lote trae **algún** reg 6 de DÉBITO (27/37/55),
+            // el valor de CRÉDITO declarado en 8 DEBE SER 0.
+            if (countDeb6 > 0) {
+                const okCredZero = (declaredCred === 0n)
+                if (!okCredZero) {
+                    ok = false
+                    checks.push(`Créditos en 8 deben ser 0 para lotes de débito; encontrado ${fmtMoney(declaredCred)}`)
+                    pushUnique(lineMarks[i], {
+                        start: 38, end: 56, type: 'error',
+                        note: `Créditos ❌ Esperado: 0, Encontrado: ${fmtMoney(declaredCred)}`
+                    })
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 38, end: 56, type: 'ok',
+                        note: 'Créditos ✅ (0 para lote de débito)'
+                    })
+                }
             } else {
-                pushUnique(lineMarks[i], {
-                    start: 38, end: 56, type: 'ok',
-                    note: `Créditos ✅ (${fmtMoney(declaredCred)})`
-                });
+                // Lote sin débitos => validación normal (crédito informado = suma de créditos de reg 6)
+                const okCred = (sumCred === declaredCred)
+                if (!okCred) {
+                    ok = false
+                    checks.push(`Créditos esperados ${fmtMoney(declaredCred)} ≠ suma ${fmtMoney(sumCred)}`)
+                    pushUnique(lineMarks[i], {
+                        start: 38, end: 56, type: 'error',
+                        note: `Créditos ❌ Esperado: ${fmtMoney(declaredCred)}, Suma: ${fmtMoney(sumCred)}`
+                    })
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 38, end: 56, type: 'ok',
+                        note: `Créditos ✅ (${fmtMoney(declaredCred)})`
+                    })
+                }
             }
-
             // Totales de Control
             if (sumControl !== declaredCtrl) {
                 okCtrl = false;
@@ -816,6 +848,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             loteStart = -1;
             count6 = 0; count7 = 0;
             sumDeb = 0n; sumCred = 0n; sumControl = 0n;
+            countDeb6 = 0
+            countCred6 = 0
             currentLotId5 = null;
             lotRec6Code = null;
             lotRec6Mismatch = false;
