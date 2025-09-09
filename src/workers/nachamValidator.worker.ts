@@ -415,7 +415,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             } else {
                 pushUnique(lineMarks[i], {
                     start: 86, end: 87, type: 'ok',
-                    note: `Indicador de adenda: ${adendaFlag === '1' ? 'permite' : 'no permite'}`
+                    note: `Indicador de adenda: ${adendaFlag === '1' ? '✅' : '❌'}`
                 });
             }
 
@@ -462,24 +462,24 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     if (recv !== expectedRecipientInLot) {
                         pushUnique(lineMarks[i], {
                             start: 3, end: 11, type: 'error',
-                            note: `Receptor distinto en lote (esperado ${expectedRecipientInLot}, encontrado ${recv})`
+                            note: `Receptor ❌ (esperado ${expectedRecipientInLot}, encontrado ${recv})`
                         });
                     } else {
                         pushUnique(lineMarks[i], {
                             start: 3, end: 11, type: 'ok',
-                            note: 'Receptor coincide con el del lote'
+                            note: 'Receptor ✅'
                         });
                     }
 
                     if (chk !== expectedCheckDigitInLot) {
                         pushUnique(lineMarks[i], {
                             start: 11, end: 12, type: 'error',
-                            note: `Dígito de chequeo distinto en lote (esperado ${expectedCheckDigitInLot}, encontrado ${chk})`
+                            note: `Dígito de chequeo distinto en lote ❌ (esperado ${expectedCheckDigitInLot}, encontrado ${chk})`
                         });
                     } else {
                         pushUnique(lineMarks[i], {
                             start: 11, end: 12, type: 'ok',
-                            note: 'Dígito de chequeo coincide con el del lote'
+                            note: 'Dígito de chequeo ✅'
                         });
                     }
                 }
@@ -495,7 +495,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     lineStatus[i] = 'error'
                     pushUnique(lineMarks[i], {
                         start: 3, end: 11, type: 'error',
-                        note: `Participante Receptor inconsistente en el lote. Esperado ${lotRec6Code}, encontrado ${codRec}.`
+                        note: `Participante Receptor ❌ Esperado ${lotRec6Code}, encontrado ${codRec}.`
                     })
                 }
             }
@@ -540,7 +540,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                         if (current !== expectedNum) {
                             pushUnique(lineMarks[i], {
                                 start: 95, end: 102, type: 'error',
-                                note: `Consecutivo esperado ${pad7(expectedNum)}, encontrado ${seqNum}`
+                                note: `Consecutivo ❌ Esperado ${pad7(expectedNum)}, encontrado ${seqNum}`
                             });
                             // Opción A: continuar contando desde el encontrado
                             lastSeq6 = current;
@@ -607,7 +607,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     if (seq7Tx !== current6SeqSuffix) {
                         pushUnique(lineMarks[i], {
                             start: 87, end: 94, type: 'error',
-                            note: `Transacción de 7 (${seq7Tx}) ≠ secuencia del 6 (${current6SeqSuffix})`
+                            note: `Transacción de 7 (${seq7Tx}) ≠ secuencia del 6 (${current6SeqSuffix}) ❌`
                         });
                         // opcional: ayuda visual en el 6
                         pushUnique(lineMarks[current6Index], {
@@ -617,13 +617,13 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     } else {
                         pushUnique(lineMarks[i], {
                             start: 87, end: 94, type: 'ok',
-                            note: 'Adenda enlazada al 6 correcto'
+                            note: 'Adenda enlazada al 6 ✅'
                         });
                     }
                 } else {
                     pushUnique(lineMarks[i], {
                         start: 87, end: 94, type: 'error',
-                        note: 'Referencia de transacción de 7 inválida'
+                        note: 'Referencia de transacción de 7 ❌'
                     });
                 }
 
@@ -762,12 +762,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     });
                     pushUnique(lineMarks[loteStart], {
                         start: 83, end: 98, type: 'info',
-                        note: 'ID de lote en 5 que no coincide con el 8 correspondiente'
+                        note: 'ID de lote en 5 que no coincide con el 8 correspondiente ❌'
                     });
                 } else {
                     pushUnique(lineMarks[i], {
                         start: 91, end: 106, type: 'ok',
-                        note: 'ID de lote en 8 coincide con el registrado en 5'
+                        note: 'ID de lote en 8 coincide con el registrado en 5 ✅'
                     });
                 }
             }
@@ -787,14 +787,14 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                         if (seqNum !== expected) {
                             pushUnique(lineMarks[i], {
                                 start: 99, end: 106, type: 'error',
-                                note: `Consecutivo de lote esperado ${pad7(expected)}, encontrado ${seq8}`
+                                note: `Consecutivo de lote ❌ Esperado ${pad7(expected)}, encontrado ${seq8}`
                             });
                             // avanzamos el cursor a lo encontrado
                             lastLotSeq = seqNum;
                         } else {
                             pushUnique(lineMarks[i], {
                                 start: 99, end: 106, type: 'ok',
-                                note: `Consecutivo de lote correcto (${seq8})`
+                                note: `Consecutivo de lote ✅ (${seq8})`
                             });
                             lastLotSeq = seqNum;
                         }
