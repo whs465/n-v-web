@@ -140,6 +140,30 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     const lineMarks: LineMark[][] = Array.from({ length: recsCount }, () => [])
     const globalErrors: string[] = []
 
+    // === DETECCIÓN DE DEVOLUCIÓN (Registro 1, pos 14–23) ===
+    // r0 ocupa 0..105, 14–23 => slice(13,23)
+    if (total >= 106) {
+        const r0 = compact.slice(0, 106)
+        const marca = r0.slice(13, 23).trim()
+        if (marca === '011111111') {
+            // Es devolución → NO validar nada, devolver vacío
+            const emptyStatus = new Array<LineStatus>(recsCount)
+            const emptyReason = new Array<string | undefined>(recsCount)
+            const emptyMarks = Array.from({ length: recsCount }, () => [] as LineMark[])
+
+                ; (self as any).postMessage({ type: 'progress', pct: 100 })
+                ; (self as any).postMessage({
+                    type: 'done',
+                    lineStatus: emptyStatus,
+                    lineReason: emptyReason,
+                    globalErrors: [],       // ← sin errores
+                    lineMarks: emptyMarks,  // ← sin marcas
+                } as WorkerOutMsg)
+            return
+        }
+    }
+
+
     // — LOTE: ID 5 vs 8 y secuencia global de lotes —
     let currentLotId5: string | null = null;   // concat 84–98 del reg 5 (8+7)
     let currentLotSeq5: number | null = null;  // sólo el sufijo de 7 dígitos del reg 5
@@ -308,7 +332,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             {
                 const code5: string = r.slice(83, 91);   // 84–91 (8)
                 const seq5: string = r.slice(91, 98);   // 92–98 (7)
-                currentLotId5 = code5 + seq5;
 
                 // Validar código
                 if (code5 !== SEQ_CODE_EXPECTED) {
@@ -329,10 +352,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                         start: 91, end: 98, type: 'error',
                         note: 'Consecutivo de lote inválido (debe ser 7 dígitos 0-padded)'
                     });
-                    currentLotSeq5 = null;
                 } else {
-                    const seqNum5: number = parseInt(seq5, 10);
-                    currentLotSeq5 = seqNum5;
                     pushUnique(lineMarks[i], {
                         start: 91, end: 98, type: 'ok',
                         note: `Consecutivo de lote en 5: ${seq5}`

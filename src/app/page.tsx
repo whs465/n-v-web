@@ -126,6 +126,8 @@ export default function Page() {
 
     const showError = (msg: string) => showErrors([msg])
 
+    const esDevolucion = (c: string) => c.length >= 106 && c.slice(13, 23).trim() === '011111111'
+
     const firstNineIdx = useMemo(
         () => records.findIndex(r => r?.[0] === '9'),
         [records]
@@ -203,7 +205,7 @@ export default function Page() {
             if (typeof r0 === 'string') {
                 const isType1 = r0[0] === '1'
                 const firma14_23 = r0.slice(14, 23) // pos 14–23
-                firmaOk = (isType1 && firma14_23 === '000016832')
+                firmaOk = (isType1 && (firma14_23 === '000016832' || firma14_23 === '011111111'))
                 if (!firmaOk) {
                     msgs.push('El archivo no contiene la firma esperada.')
                 }
@@ -238,17 +240,29 @@ export default function Page() {
                 return
             }
 
-            // Lanza validación pesada
-            //console.log('[ui] validateText len=', compact.length)
-            validateText(compact, {
-                checkTransCount: true,
-                checkCreditos: true,
-                checkDebitos: true,
-                checkTotalesControl: true,
-                includeAdendasInTrans: true,
-                serialFromName: extractSerialFromName(file.name),
-            })
 
+            if (esDevolucion(compact)) {
+                setIsNachamValid(true)          // habilita export
+                setBadRowSet(new Set())         // sin errores visuales
+                setBadFromIndex(null)
+                // limpiar cualquier resultado previo del worker
+                resetValidator?.()
+
+                // opcional: avisar con toast “info”
+                //showErrors?.(['Archivo de devolución detectado — se omite validación. Puede exportar.'], 6000)
+
+            } else {
+                // Lanza validación pesada
+                //console.log('[ui] validateText len=', compact.length)
+                validateText(compact, {
+                    checkTransCount: true,
+                    checkCreditos: true,
+                    checkDebitos: true,
+                    checkTotalesControl: true,
+                    includeAdendasInTrans: true,
+                    serialFromName: extractSerialFromName(file.name),
+                })
+            }
             if (msgs.length) showErrors(msgs, 10000)
         } catch (err) {
             console.error(err)
@@ -415,7 +429,7 @@ export default function Page() {
             ]
         }
         return flds
-    }, [records,findParentRecord])
+    }, [records, findParentRecord])
 
 
 
@@ -482,7 +496,8 @@ export default function Page() {
     // === Export Excel (6 + adenda 7 al lado) ===
     const exportExcel = () => {
         if (!records.length) return
-        if (!isOk) {
+        const canExport = isOk || esDevolucion
+        if (!canExport) {
             showError('No se puede exportar: el archivo presenta errores.')
             return
         }
@@ -532,7 +547,10 @@ export default function Page() {
             {/* Header */}
             <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
                 <div className="max-w-[1000px] mx-auto flex items-center justify-between py-2 px-4">
-                    <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">Visor de archivos NACHAM</h1>
+                    <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">
+                        Visor de archivos NACHAM
+                    </h1>
+
                     <div className="flex items-center space-x-4">
                         {fileName && (
                             <div className="flex items-center text-gray-700 text-sm truncate max-w-xs">
@@ -545,23 +563,37 @@ export default function Page() {
                                     </span>
                                 )}
 
-                                {/* Progreso validación */}
-                                {progress > 0 && progress < 100 && (
+                                {/* Progreso validación (solo cuando realmente valida) */}
+                                {isValidating && progress > 0 && progress < 100 && (
                                     <div className="ml-3 flex items-center gap-2 text-sm text-[#2D77C2]">
                                         <span>Validando… {progress}%</span>
                                         <div className="w-28 h-1.5 bg-gray-200 rounded">
-                                            <div className="h-1.5 bg-[#2D77C2] rounded" style={{ width: `${progress}%` }} />
+                                            <div
+                                                className="h-1.5 bg-[#2D77C2] rounded"
+                                                style={{ width: `${progress}%` }}
+                                            />
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Resultado OK: solo aquí mostramos escudo y export */}
+                                {/* Resultado OK (no devolución): escudo + export */}
                                 {!isValidating && isOk && (
                                     <>
-                                        <span className="ml-2 inline-flex items-center text-green-600" title="Validación OK">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
-                                                viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <span
+                                            className="ml-2 inline-flex items-center text-green-600"
+                                            title="Validación OK"
+                                        >
+                                            <svg
+                                                xmlns="http://www.w3.org/2000/svg"
+                                                width="20"
+                                                height="20"
+                                                viewBox="0 0 24 24"
+                                                fill="none"
+                                                stroke="currentColor"
+                                                strokeWidth="2"
+                                                strokeLinecap="round"
+                                                strokeLinejoin="round"
+                                            >
                                                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
                                                 <path d="M9 12l2 2 4-4" />
                                             </svg>
@@ -577,8 +609,27 @@ export default function Page() {
                                     </>
                                 )}
 
-                                {/* Errores: mostrar badge y NO mostrar escudo ni export */}
-                                {!isValidating && !isOk && errCount > 0 && (
+                                {/* Devolución: badge “Devolución” + export habilitado */}
+                                {!isValidating && !isOk && isNachamValid === true && (
+                                    <>
+                                        <span
+                                            className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-300"
+                                            title="Archivo de devolución: validación omitida"
+                                        >
+                                            Devolución
+                                        </span>
+                                        <button
+                                            type="button"
+                                            onClick={exportExcel}
+                                            className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
+                                            title="Exportar a Excel"
+                                            dangerouslySetInnerHTML={{ __html: svgExportIcono }}
+                                        />
+                                    </>
+                                )}
+
+                                {/* Errores: mostrar badge y NO mostrar export */}
+                                {!isValidating && !isOk && isNachamValid !== true && errCount > 0 && (
                                     <div className="ml-3 flex items-center gap-2 text-sm">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300">
                                             ⚠ Errores ({errCount})
@@ -591,11 +642,17 @@ export default function Page() {
                         <label
                             htmlFor="fileInput"
                             className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 active:bg-green-800
-                     text-white text-sm font-medium rounded shadow cursor-pointer transition"
+                 text-white text-sm font-medium rounded shadow cursor-pointer transition"
                         >
                             Seleccionar NACHAM
                         </label>
-                        <input id="fileInput" type="file" accept="*.*" className="hidden" onChange={handleFile} />
+                        <input
+                            id="fileInput"
+                            type="file"
+                            accept="*.*"
+                            className="hidden"
+                            onChange={handleFile}
+                        />
                     </div>
                 </div>
             </header>
@@ -684,6 +741,4 @@ export default function Page() {
             </div>
         </>
     )
-
-
 }
