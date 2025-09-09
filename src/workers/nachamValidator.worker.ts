@@ -673,8 +673,9 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
             const checks: string[] = [];
             let ok = true
-            let okTrans = true, okCred = true, okCtrl = true;
-
+            let okTrans = true, okCtrl = true;
+            const okCred = true
+            
             // Transacciones
             if (gotTrans !== declaredTrans) {
                 okTrans = false;
