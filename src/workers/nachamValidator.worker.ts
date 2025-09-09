@@ -271,6 +271,13 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let sumCred = BigInt(0)
     let sumControl = BigInt(0)
 
+    let lotRec6Code: string | null = null
+    let lotRec6Mismatch = false
+
+    // — Por lote: receptor esperado para registros 6 —
+    let expectedRecipientInLot: string | null = null; // 8 chars (4–11)
+    let expectedCheckDigitInLot: string | null = null; // 1 char (12)
+
     const step = Math.max(1, Math.floor(recsCount / 20)) // ~5%
 
     for (let i = 0; i < recsCount; i++) {
@@ -294,6 +301,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             sumDeb = BigInt(0)
             sumCred = BigInt(0)
             sumControl = BigInt(0)
+
+            lotRec6Code = null
+            lotRec6Mismatch = false
+
+            expectedRecipientInLot = null;
+            expectedCheckDigitInLot = null;
 
             // === Reg. 5: Fecha (72–79) y Juliano (80–82) ===
             const fechaStr = r.slice(71, 79)   // AAAAMMDD
@@ -421,6 +434,70 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     start: 95, end: 102, type: 'error',
                     note: 'Secuencia 6 inválida (debe ser 7 dígitos)'
                 });
+            }
+
+            // === Validación: mismo receptor y dígito de chequeo para todos los 6 del lote ===
+            // Participante Receptor 4–11 => slice(3,11) (8 chars)
+            // Dígito de chequeo       12  => slice(11,12) (1 char)
+            {
+                const recv: string = r.slice(3, 11);
+                const chk: string = r.slice(11, 12);
+
+                if (expectedRecipientInLot === null) {
+                    // Primer 6 del lote fija el "esperado"
+                    expectedRecipientInLot = recv;
+                    expectedCheckDigitInLot = chk;
+
+                    // Marcas suaves de OK para dar feedback al usuario
+                    pushUnique(lineMarks[i], {
+                        start: 3, end: 11, type: 'ok',
+                        note: `Receptor de lote fijado: ${recv}`
+                    });
+                    pushUnique(lineMarks[i], {
+                        start: 11, end: 12, type: 'ok',
+                        note: `Dígito de chequeo fijado: ${chk}`
+                    });
+                } else {
+                    // Comparar con lo esperado
+                    if (recv !== expectedRecipientInLot) {
+                        pushUnique(lineMarks[i], {
+                            start: 3, end: 11, type: 'error',
+                            note: `Receptor distinto en lote (esperado ${expectedRecipientInLot}, encontrado ${recv})`
+                        });
+                    } else {
+                        pushUnique(lineMarks[i], {
+                            start: 3, end: 11, type: 'ok',
+                            note: 'Receptor coincide con el del lote'
+                        });
+                    }
+
+                    if (chk !== expectedCheckDigitInLot) {
+                        pushUnique(lineMarks[i], {
+                            start: 11, end: 12, type: 'error',
+                            note: `Dígito de chequeo distinto en lote (esperado ${expectedCheckDigitInLot}, encontrado ${chk})`
+                        });
+                    } else {
+                        pushUnique(lineMarks[i], {
+                            start: 11, end: 12, type: 'ok',
+                            note: 'Dígito de chequeo coincide con el del lote'
+                        });
+                    }
+                }
+            }
+
+
+            {  // >>> NUEVO: validar consistencia de Participante Receptor pos 4–11 (slice 3,11)
+                const codRec = r.slice(3, 11)        // exacto, sin trim
+                if (lotRec6Code === null) {
+                    lotRec6Code = codRec               // baseline del lote
+                } else if (codRec !== lotRec6Code) {
+                    lotRec6Mismatch = true
+                    lineStatus[i] = 'error'
+                    pushUnique(lineMarks[i], {
+                        start: 3, end: 11, type: 'error',
+                        note: `Participante Receptor inconsistente en el lote. Esperado ${lotRec6Code}, encontrado ${codRec}.`
+                    })
+                }
             }
 
             // === Validación: Número de Secuencia (pos 88-102 => slice(87,102)) ===
@@ -555,7 +632,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             }
 
         } else if (t === '8' && loteStart >= 0) {
-            // Chequeo final del 6 actual antes de cerrar lote
+            // — Cierre de 6 pendiente antes de cerrar lote
             if (current6Index !== null) {
                 if (current6AllowsAdenda && current7Count === 0) {
                     pushUnique(lineMarks[current6Index], {
@@ -564,197 +641,188 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     });
                 }
             }
-
-            // Reset contexto 6 para el próximo ciclo/lote
+            // Reset contexto 6
             current6Index = null;
             current6AllowsAdenda = false;
             current6SeqSuffix = null;
             current7Count = 0;
 
-            // Acumular lo declarado en cada 8:
-            const decCtrl = toBig(r.slice(10, 20)); // 11–20
-            const decDeb = toBig(r.slice(20, 38)); // 21–38
-            const decCred = toBig(r.slice(38, 56)); // 39–56
-            fileSumCtrl += decCtrl;
-            fileSumDeb += decDeb;
-            fileSumCred += decCred;
-            // #Trans/Adenda: 5–10 => slice(4,10)
-            // Totales de Control: 11–20 => slice(10,20)
-            // Valor Débitos: 21–38 => slice(20,38)
-            // Valor Créditos: 39–56 => slice(38,56)
-            const declaredTrans = parseInt(r.slice(4, 10).trim() || '0', 10)
-            const declaredCtrl = toBig(r.slice(10, 20))
-            const declaredDeb = toCents(r.slice(20, 38))  // 21–38
-            const declaredCred = toCents(r.slice(38, 56))  // 39–56
+            // === Declarados en 8 ===
+            const declaredTrans = parseInt(r.slice(4, 10).trim() || '0', 10); // 5–10
+            const declaredCtrl = toBig(r.slice(10, 20));                   // 11–20
+            const declaredDeb = toCents(r.slice(20, 38));                   // 21–38
+            const declaredCred = toCents(r.slice(38, 56));                   // 39–56
 
-            const gotTrans = count6 + count7
+            // Para totales de archivo
+            fileSumCtrl += declaredCtrl;
+            fileSumDeb += declaredDeb;
+            fileSumCred += declaredCred;
 
-            const checks: string[] = []
-            let ok = true
+            const gotTrans = count6 + count7;
 
-            // Transacciones (5–10 => slice 4..10)
-            const okTrans = gotTrans === declaredTrans
-            if (!okTrans) {
-                ok = false
-                checks.push(`Trans esperadas ${declaredTrans}, calc ${gotTrans}`)
+            const checks: string[] = [];
+            let okTrans = true, okDeb = true, okCred = true, okCtrl = true;
+
+            // Transacciones
+            if (gotTrans !== declaredTrans) {
+                okTrans = false;
+                checks.push(`Trans esperadas ${declaredTrans}, calc ${gotTrans}`);
                 pushUnique(lineMarks[i], {
                     start: 4, end: 10, type: 'error',
                     note: `Transacciones ❌. Esperado: ${declaredTrans}, Calculado: ${gotTrans}`
-                })
+                });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 4, end: 10, type: 'ok',
                     note: `Transacciones ✅ (${declaredTrans})`
-                })
+                });
             }
 
-            // Débitos (21–38 => slice 20..38)
-            const okDeb = sumDeb === declaredDeb
-            if (!okDeb) {
-                ok = false
-                checks.push(`Débitos esperados ${declaredDeb} ≠ suma ${sumDeb}`)
+            // Débitos
+            if (sumDeb !== declaredDeb) {
+                okDeb = false;
+                checks.push(`Débitos esperados ${fmtMoney(declaredDeb)} ≠ suma ${fmtMoney(sumDeb)}`);
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'error',
                     note: `Débitos ❌ Esperado: ${fmtMoney(declaredDeb)}, Suma: ${fmtMoney(sumDeb)}`
-                })
+                });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'ok',
                     note: `Débitos ✅ (${fmtMoney(declaredDeb)})`
-                })
+                });
             }
 
-            // Créditos (39–56 => slice 38..56)
-            const okCred = sumCred === declaredCred
-            if (!okCred) {
-                ok = false
-                checks.push(`Créditos esperados ${declaredCred} ≠ suma ${sumCred}`)
+            // Créditos
+            if (sumCred !== declaredCred) {
+                okCred = false;
+                checks.push(`Créditos esperados ${fmtMoney(declaredCred)} ≠ suma ${fmtMoney(sumCred)}`);
                 pushUnique(lineMarks[i], {
                     start: 38, end: 56, type: 'error',
                     note: `Créditos ❌ Esperado: ${fmtMoney(declaredCred)}, Suma: ${fmtMoney(sumCred)}`
-                })
+                });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 38, end: 56, type: 'ok',
                     note: `Créditos ✅ (${fmtMoney(declaredCred)})`
-                })
+                });
             }
 
-            // Totales de Control (11–20 => slice 10..20)
-            const okCtrl = sumControl === declaredCtrl
-            if (!okCtrl) {
-                ok = false
-                checks.push(`Totales de Control esperados ${declaredCtrl} ≠ suma ${sumControl}`)
+            // Totales de Control
+            if (sumControl !== declaredCtrl) {
+                okCtrl = false;
+                checks.push(`Totales de Control esperados ${fmt(declaredCtrl)} ≠ suma ${fmt(sumControl)}`);
                 pushUnique(lineMarks[i], {
                     start: 10, end: 20, type: 'error',
                     note: `Totales de Control ❌ Esperado: ${fmt(declaredCtrl)}, Suma: ${fmt(sumControl)}`
-                })
+                });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 10, end: 20, type: 'ok',
                     note: `Totales de Control ✅ (${fmt(declaredCtrl)})`
-                })
+                });
             }
 
-            // Pinta 5..8
-            for (let j = loteStart; j <= i; j++) lineStatus[j] = ok ? 'ok' : 'error'
-            if (!ok && checks.length) lineReason[i] = checks.join(' | ')
+            // === ID de lote 5 (84–98) vs 8 (92–106) y secuencia global ===
+            // En 8: 92–99 (código) y 100–106 (consecutivo)
+            const code8 = r.slice(91, 99);
+            const seq8 = r.slice(99, 106);
+            const id8 = code8 + seq8;
 
-            // === LOTE: comparar ID 5 (84–98) con 8 (92–106) y secuencia global ===
-            {
-                // En 8: 92–99 (8) + 100–106 (7) => slice(91,99) y slice(99,106)
-                const code8: string = r.slice(91, 99);
-                const seq8: string = r.slice(99, 106);
-                const id8: string = code8 + seq8;
+            if (code8 !== SEQ_CODE_EXPECTED) {
+                pushUnique(lineMarks[i], {
+                    start: 91, end: 99, type: 'error',
+                    note: `Código de lote en 8 inválido (esperado ${SEQ_CODE_EXPECTED})`
+                });
+            } else {
+                pushUnique(lineMarks[i], {
+                    start: 91, end: 99, type: 'ok',
+                    note: 'Código de lote en 8 correcto'
+                });
+            }
 
-                // 8: validar formato local (código + 7 dígitos)
-                if (code8 !== SEQ_CODE_EXPECTED) {
+            if (!/^\d{7}$/.test(seq8)) {
+                pushUnique(lineMarks[i], {
+                    start: 99, end: 106, type: 'error',
+                    note: 'Consecutivo de lote en 8 inválido (7 dígitos 0-padded)'
+                });
+            } else {
+                pushUnique(lineMarks[i], {
+                    start: 99, end: 106, type: 'ok',
+                    note: `Consecutivo de lote en 8: ${seq8}`
+                });
+            }
+
+            if (currentLotId5 !== null) {
+                if (id8 !== currentLotId5) {
+                    checks.push('ID 5≠8');
                     pushUnique(lineMarks[i], {
-                        start: 91, end: 99, type: 'error',
-                        note: `Código de lote en 8 inválido (esperado ${SEQ_CODE_EXPECTED})`
+                        start: 91, end: 106, type: 'error',
+                        note: `ID de lote en 8 (${code8}+${seq8}) ≠ ID en 5 (${currentLotId5})`
+                    });
+                    pushUnique(lineMarks[loteStart], {
+                        start: 83, end: 98, type: 'info',
+                        note: 'ID de lote en 5 que no coincide con el 8 correspondiente'
                     });
                 } else {
                     pushUnique(lineMarks[i], {
-                        start: 91, end: 99, type: 'ok',
-                        note: 'Código de lote en 8 correcto'
+                        start: 91, end: 106, type: 'ok',
+                        note: 'ID de lote en 8 coincide con el registrado en 5'
                     });
                 }
+            }
 
-                if (!/^\d{7}$/.test(seq8)) {
-                    pushUnique(lineMarks[i], {
-                        start: 99, end: 106, type: 'error',
-                        note: 'Consecutivo de lote en 8 inválido (debe ser 7 dígitos 0-padded)'
-                    });
-                } else {
+            // Secuencia global de lotes por 8
+            if (/^\d{7}$/.test(seq8)) {
+                const seqNum = parseInt(seq8, 10);
+                if (lastLotSeq === null) {
+                    lastLotSeq = seqNum;
                     pushUnique(lineMarks[i], {
                         start: 99, end: 106, type: 'ok',
-                        note: `Consecutivo de lote en 8: ${seq8}`
+                        note: `Consecutivo global base ${pad7(seqNum)}`
                     });
-                }
-
-                // Comparar 5 vs 8 (deben ser idénticos)
-                if (currentLotId5 !== null) {
-                    if (id8 !== currentLotId5) {
-                        // Marcar error en 8, y también marcar en 5 para ayudar al usuario
-                        pushUnique(lineMarks[i], {
-                            start: 91, end: 106, type: 'error',
-                            note: `ID de lote en 8 (${code8}+${seq8}) ≠ ID en 5 (${currentLotId5})`
-                        });
-                        pushUnique(lineMarks[loteStart], {
-                            start: 83, end: 98, type: 'info',
-                            note: 'Este es el ID de lote en 5 que no coincide con el 8 correspondiente'
-                        });
-                    } else {
-                        pushUnique(lineMarks[i], {
-                            start: 91, end: 106, type: 'ok',
-                            note: 'ID de lote en 8 coincide con el registrado en 5'
-                        });
-                    }
-                }
-
-                // Secuencia global entre lotes (usa el consecutivo del 8)
-                if (/^\d{7}$/.test(seq8)) {
-                    const seq8Num: number = parseInt(seq8, 10);
-                    if (lastLotSeq === null) {
-                        lastLotSeq = seq8Num;
-                        // primera vez: ok suave
-                        pushUnique(lineMarks[i], {
-                            start: 99, end: 106, type: 'ok',
-                            note: `Consecutivo global base ${pad7(seq8Num)}`
-                        });
-                    } else {
-                        const expectedNum: number = lastLotSeq + 1;
-                        if (seq8Num !== expectedNum) {
+                } else {
+                    if (lastLotSeq !== null) {
+                        const expected: number = lastLotSeq + 1;
+                        if (seqNum !== expected) {
                             pushUnique(lineMarks[i], {
                                 start: 99, end: 106, type: 'error',
-                                note: `Consecutivo de lote esperado ${pad7(expectedNum)}, encontrado ${seq8}`
+                                note: `Consecutivo de lote esperado ${pad7(expected)}, encontrado ${seq8}`
                             });
-                            // avanzamos el cursor a lo encontrado para seguir comparando desde ahí
-                            lastLotSeq = seq8Num;
+                            // avanzamos el cursor a lo encontrado
+                            lastLotSeq = seqNum;
                         } else {
                             pushUnique(lineMarks[i], {
                                 start: 99, end: 106, type: 'ok',
                                 note: `Consecutivo de lote correcto (${seq8})`
                             });
-                            lastLotSeq = seq8Num;
+                            lastLotSeq = seqNum;
                         }
                     }
                 }
-
-                // (el resto de tus checks del 8 se mantienen igual aquí)
             }
 
+            // >>> Consistencia de participante receptor 6 dentro del lote
+            if (lotRec6Mismatch) {
+                checks.push('Inconsistencias de Participante Receptor en registros 6 del lote.');
+            }
 
-            // cerrar lote
-            loteStart = -1
-            count6 = 0
-            count7 = 0
-            sumDeb = BigInt(0)
-            sumCred = BigInt(0)
-            sumControl = BigInt(0)
-            // se reseteá el ID del lote en curso
+            // Resultado final del lote (una sola vez)
+            const lotOk = okTrans && okDeb && okCred && okCtrl && !lotRec6Mismatch;
+            for (let j = loteStart; j <= i; j++) lineStatus[j] = lotOk ? 'ok' : 'error';
+            if (!lotOk && checks.length) lineReason[i] = checks.join(' | ');
+
+            // Cerrar lote / reset
+            loteStart = -1;
+            count6 = 0; count7 = 0;
+            sumDeb = 0n; sumCred = 0n; sumControl = 0n;
             currentLotId5 = null;
-        } else if (t === '9') {
+            lotRec6Code = null;
+            lotRec6Mismatch = false;
+            expectedRecipientInLot = null;
+            expectedCheckDigitInLot = null;
+        }
+        else if (t === '9') {
             if (first9Index === -1) {
                 first9Index = i;
                 first9Text = r;
