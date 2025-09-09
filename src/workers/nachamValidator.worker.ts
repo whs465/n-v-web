@@ -140,6 +140,24 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     const lineMarks: LineMark[][] = Array.from({ length: recsCount }, () => [])
     const globalErrors: string[] = []
 
+    // — LOTE: ID 5 vs 8 y secuencia global de lotes —
+    let currentLotId5: string | null = null;   // concat 84–98 del reg 5 (8+7)
+    let currentLotSeq5: number | null = null;  // sólo el sufijo de 7 dígitos del reg 5
+    let lastLotSeq: number | null = null;      // secuencia global (entre lotes)
+
+    // — Adendas por REG 6 —
+    let current6Index: number | null = null;
+    let current6AllowsAdenda: boolean = false;   // indicador 87
+    let current6SeqSuffix: string | null = null; // 96–102 (7 dígitos)
+    let current7Count: number = 0;               // cuántas 7 asociadas llevamos
+
+    const pad4 = (n: number) => n.toString().padStart(4, '0');
+
+    // — Secuenciación global de registros tipo 6 (88–102 = 8+7) —
+    let lastSeq6: number | null = null;   // guarda el último consecutivo visto (solo sufijo de 7 dígitos)
+    const pad7 = (n: number) => n.toString().padStart(7, '0');
+    const SEQ_CODE_EXPECTED = '00001683';
+
     // --- Identificador (Tipo 1 pos 36) vs serial de nombre de archivo ---
     // options.serialFromName debe traerse desde la UI
     const serialFromName = opts.serialFromName // <- opts = { ...defaultOptions, ...options }
@@ -286,7 +304,53 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 }
             }
 
+            // === LOTE: capturar ID del 5 (84–98 => slice(83,98)) ===
+            {
+                const code5: string = r.slice(83, 91);   // 84–91 (8)
+                const seq5: string = r.slice(91, 98);   // 92–98 (7)
+                currentLotId5 = code5 + seq5;
+
+                // Validar código
+                if (code5 !== SEQ_CODE_EXPECTED) {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 91, type: 'error',
+                        note: `Código de lote inválido (esperado ${SEQ_CODE_EXPECTED})`
+                    });
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 91, type: 'ok',
+                        note: 'Código de lote correcto'
+                    });
+                }
+
+                // Validar consecutivo (7 dígitos)
+                if (!/^\d{7}$/.test(seq5)) {
+                    pushUnique(lineMarks[i], {
+                        start: 91, end: 98, type: 'error',
+                        note: 'Consecutivo de lote inválido (debe ser 7 dígitos 0-padded)'
+                    });
+                    currentLotSeq5 = null;
+                } else {
+                    const seqNum5: number = parseInt(seq5, 10);
+                    currentLotSeq5 = seqNum5;
+                    pushUnique(lineMarks[i], {
+                        start: 91, end: 98, type: 'ok',
+                        note: `Consecutivo de lote en 5: ${seq5}`
+                    });
+                }
+            }
+
         } else if (t === '6' && loteStart >= 0) {
+            if (current6Index !== null) {
+                if (current6AllowsAdenda && current7Count === 0) {
+                    pushUnique(lineMarks[current6Index], {
+                        start: 86, end: 87, type: 'error',
+                        note: 'Indicó adendas pero no se encontró ninguna'
+                    });
+                }
+            }
+
+
             fileCount6++
             // Valor de la transacción 30–47 => slice(29,47) → en CENTAVOS
             const val = toCents(r.slice(29, 47))
@@ -300,10 +364,191 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             sumControl += codRec
             // console.debug('[worker] reg6', { idx: i, val: val.toString(), codRec: codRec.toString() });
 
+            // — Contexto para adendas del 6 —
+            current6Index = i;
+            current7Count = 0;
+
+            // Indicador de adenda 87–87 => slice(86,87)
+            const adendaFlag = r.slice(86, 87);
+            current6AllowsAdenda = (adendaFlag === '1');
+
+            if (adendaFlag !== '0' && adendaFlag !== '1') {
+                pushUnique(lineMarks[i], {
+                    start: 86, end: 87, type: 'error',
+                    note: 'Indicador de adenda inválido (debe ser 0 o 1)'
+                });
+            } else {
+                pushUnique(lineMarks[i], {
+                    start: 86, end: 87, type: 'ok',
+                    note: `Indicador de adenda: ${adendaFlag === '1' ? 'permite' : 'no permite'}`
+                });
+            }
+
+            // Sufijo de secuencia del 6: 96–102 => slice(95,102)
+            const seq6 = r.slice(95, 102);
+            if (/^\d{7}$/.test(seq6)) {
+                current6SeqSuffix = seq6;
+                // (si querés marcar ok suave)
+                pushUnique(lineMarks[i], {
+                    start: 95, end: 102, type: 'ok',
+                    note: `Secuencia 6: ${seq6}`
+                });
+            } else {
+                current6SeqSuffix = null;
+                pushUnique(lineMarks[i], {
+                    start: 95, end: 102, type: 'error',
+                    note: 'Secuencia 6 inválida (debe ser 7 dígitos)'
+                });
+            }
+
+            // === Validación: Número de Secuencia (pos 88-102 => slice(87,102)) ===
+            {
+                const seqCode = r.slice(87, 95);         // 88-95
+                const seqNum = r.slice(95, 102);        // 96-102
+
+                // 1) Código fijo "00001683"
+                if (seqCode !== SEQ_CODE_EXPECTED) {
+                    pushUnique(lineMarks[i], {
+                        start: 87, end: 95, type: 'error',
+                        note: `Código de Originador ❌ (esperado ${SEQ_CODE_EXPECTED})`
+                    });
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 87, end: 95, type: 'ok',
+                        note: 'Código de Originador ✅'
+                    });
+                }
+
+                // 2) Sufijo: 7 dígitos y secuencial
+                const is7Digits: boolean = /^\d{7}$/.test(seqNum);
+                if (!is7Digits) {
+                    pushUnique(lineMarks[i], {
+                        start: 95, end: 102, type: 'error',
+                        note: 'Consecutivo ❌ (debe ser 7 dígitos 0-padded)'
+                    });
+                } else {
+                    const current: number = parseInt(seqNum, 10);
+
+                    if (lastSeq6 === null) {
+                        // Primer 6: base
+                        lastSeq6 = current;
+                        pushUnique(lineMarks[i], {
+                            start: 95, end: 102, type: 'ok',
+                            note: `Consecutivo base ${pad7(current)}`
+                        });
+                    } else {
+                        const expectedNum: number = lastSeq6 + 1
+                        if (current !== expectedNum) {
+                            pushUnique(lineMarks[i], {
+                                start: 95, end: 102, type: 'error',
+                                note: `Consecutivo esperado ${pad7(expectedNum)}, encontrado ${seqNum}`
+                            });
+                            // Opción A: continuar contando desde el encontrado
+                            lastSeq6 = current;
+                        } else {
+                            pushUnique(lineMarks[i], {
+                                start: 95, end: 102, type: 'ok',
+                                note: `Consecutivo ✅ (${seqNum})`
+                            });
+                            lastSeq6 = current;
+                        }
+                    }
+                }
+            }     // fin validación secuencia
+
         } else if (t === '7' && loteStart >= 0) {
             fileCount7++
             count7++
+
+            // — Validaciones de adenda asociada a un 6 previo —
+            if (current6Index === null) {
+                // 7 sin 6 anterior: marcar todo el 7 como error leve
+                pushUnique(lineMarks[i], {
+                    start: 0, end: 106, type: 'error',
+                    note: 'Adenda sin registro 6 precedente'
+                });
+            } else {
+                // a) Si el 6 dijo "no adenda", cualquier 7 es error
+                if (!current6AllowsAdenda) {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 87, type: 'error',
+                        note: 'Adenda inesperada: el 6 indicó que no lleva adendas'
+                    });
+                    // Opcional: remarcar el flag del 6
+                    pushUnique(lineMarks[current6Index], {
+                        start: 86, end: 87, type: 'info',
+                        note: 'Este 6 indicó que no hay adendas'
+                    });
+                }
+
+                // b) Validar secuencia de adenda 84–87 => slice(83,87) = 4 dígitos 0001,0002...
+                const seq7 = r.slice(83, 87);
+                const is4 = /^\d{4}$/.test(seq7);
+                const expected4 = pad4(current7Count + 1);
+                if (!is4) {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 87, type: 'error',
+                        note: 'Nº de adenda inválido (debe ser 4 dígitos 0-padded)'
+                    });
+                } else if (seq7 !== expected4) {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 87, type: 'error',
+                        note: `Nº de adenda esperado ${expected4}, encontrado ${seq7}`
+                    });
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 83, end: 87, type: 'ok',
+                        note: `Adenda #${expected4}`
+                    });
+                }
+
+                // c) Validar vínculo con secuencia del 6: 7.pos 88–94 => slice(87,94) debe == 6.pos 96–102
+                const seq7Tx = r.slice(87, 94);
+                if (current6SeqSuffix && /^\d{7}$/.test(seq7Tx)) {
+                    if (seq7Tx !== current6SeqSuffix) {
+                        pushUnique(lineMarks[i], {
+                            start: 87, end: 94, type: 'error',
+                            note: `Transacción de 7 (${seq7Tx}) ≠ secuencia del 6 (${current6SeqSuffix})`
+                        });
+                        // opcional: ayuda visual en el 6
+                        pushUnique(lineMarks[current6Index], {
+                            start: 95, end: 102, type: 'info',
+                            note: 'Secuencia del 6 esperada por sus adendas'
+                        });
+                    } else {
+                        pushUnique(lineMarks[i], {
+                            start: 87, end: 94, type: 'ok',
+                            note: 'Adenda enlazada al 6 correcto'
+                        });
+                    }
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 87, end: 94, type: 'error',
+                        note: 'Referencia de transacción de 7 inválida'
+                    });
+                }
+
+                // incrementar contador de adendas vistas para este 6
+                current7Count += 1;
+            }
+
         } else if (t === '8' && loteStart >= 0) {
+            // Chequeo final del 6 actual antes de cerrar lote
+            if (current6Index !== null) {
+                if (current6AllowsAdenda && current7Count === 0) {
+                    pushUnique(lineMarks[current6Index], {
+                        start: 86, end: 87, type: 'error',
+                        note: 'Indicó adendas pero no se encontró ninguna'
+                    });
+                }
+            }
+
+            // Reset contexto 6 para el próximo ciclo/lote
+            current6Index = null;
+            current6AllowsAdenda = false;
+            current6SeqSuffix = null;
+            current7Count = 0;
+
             // Acumular lo declarado en cada 8:
             const decCtrl = toBig(r.slice(10, 20)); // 11–20
             const decDeb = toBig(r.slice(20, 38)); // 21–38
@@ -332,12 +577,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 checks.push(`Trans esperadas ${declaredTrans}, calc ${gotTrans}`)
                 pushUnique(lineMarks[i], {
                     start: 4, end: 10, type: 'error',
-                    note: `Transacciones no coinciden. Esperado: ${declaredTrans}, Calculado: ${gotTrans}`
+                    note: `Transacciones ❌. Esperado: ${declaredTrans}, Calculado: ${gotTrans}`
                 })
             } else {
                 pushUnique(lineMarks[i], {
                     start: 4, end: 10, type: 'ok',
-                    note: `Transacciones OK (${declaredTrans})`
+                    note: `Transacciones ✅ (${declaredTrans})`
                 })
             }
 
@@ -348,12 +593,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 checks.push(`Débitos esperados ${declaredDeb} ≠ suma ${sumDeb}`)
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'error',
-                    note: `Débitos no coinciden. Esperado: ${fmtMoney(declaredDeb)}, Suma: ${fmtMoney(sumDeb)}`
+                    note: `Débitos ❌ Esperado: ${fmtMoney(declaredDeb)}, Suma: ${fmtMoney(sumDeb)}`
                 })
             } else {
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'ok',
-                    note: `Débitos OK (${fmtMoney(declaredDeb)})`
+                    note: `Débitos ✅ (${fmtMoney(declaredDeb)})`
                 })
             }
 
@@ -364,12 +609,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 checks.push(`Créditos esperados ${declaredCred} ≠ suma ${sumCred}`)
                 pushUnique(lineMarks[i], {
                     start: 38, end: 56, type: 'error',
-                    note: `Créditos no coinciden. Esperado: ${fmtMoney(declaredCred)}, Suma: ${fmtMoney(sumCred)}`
+                    note: `Créditos ❌ Esperado: ${fmtMoney(declaredCred)}, Suma: ${fmtMoney(sumCred)}`
                 })
             } else {
                 pushUnique(lineMarks[i], {
                     start: 38, end: 56, type: 'ok',
-                    note: `Créditos OK (${fmtMoney(declaredCred)})`
+                    note: `Créditos ✅ (${fmtMoney(declaredCred)})`
                 })
             }
 
@@ -380,18 +625,103 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 checks.push(`Totales de Control esperados ${declaredCtrl} ≠ suma ${sumControl}`)
                 pushUnique(lineMarks[i], {
                     start: 10, end: 20, type: 'error',
-                    note: `Totales de Control no coinciden. Esperado: ${fmt(declaredCtrl)}, Suma: ${fmt(sumControl)}`
+                    note: `Totales de Control ❌ Esperado: ${fmt(declaredCtrl)}, Suma: ${fmt(sumControl)}`
                 })
             } else {
                 pushUnique(lineMarks[i], {
                     start: 10, end: 20, type: 'ok',
-                    note: `Totales de Control OK (${fmt(declaredCtrl)})`
+                    note: `Totales de Control ✅ (${fmt(declaredCtrl)})`
                 })
             }
 
             // Pinta 5..8
             for (let j = loteStart; j <= i; j++) lineStatus[j] = ok ? 'ok' : 'error'
             if (!ok && checks.length) lineReason[i] = checks.join(' | ')
+
+            // === LOTE: comparar ID 5 (84–98) con 8 (92–106) y secuencia global ===
+            {
+                // En 8: 92–99 (8) + 100–106 (7) => slice(91,99) y slice(99,106)
+                const code8: string = r.slice(91, 99);
+                const seq8: string = r.slice(99, 106);
+                const id8: string = code8 + seq8;
+
+                // 8: validar formato local (código + 7 dígitos)
+                if (code8 !== SEQ_CODE_EXPECTED) {
+                    pushUnique(lineMarks[i], {
+                        start: 91, end: 99, type: 'error',
+                        note: `Código de lote en 8 inválido (esperado ${SEQ_CODE_EXPECTED})`
+                    });
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 91, end: 99, type: 'ok',
+                        note: 'Código de lote en 8 correcto'
+                    });
+                }
+
+                if (!/^\d{7}$/.test(seq8)) {
+                    pushUnique(lineMarks[i], {
+                        start: 99, end: 106, type: 'error',
+                        note: 'Consecutivo de lote en 8 inválido (debe ser 7 dígitos 0-padded)'
+                    });
+                } else {
+                    pushUnique(lineMarks[i], {
+                        start: 99, end: 106, type: 'ok',
+                        note: `Consecutivo de lote en 8: ${seq8}`
+                    });
+                }
+
+                // Comparar 5 vs 8 (deben ser idénticos)
+                if (currentLotId5 !== null) {
+                    if (id8 !== currentLotId5) {
+                        // Marcar error en 8, y también marcar en 5 para ayudar al usuario
+                        pushUnique(lineMarks[i], {
+                            start: 91, end: 106, type: 'error',
+                            note: `ID de lote en 8 (${code8}+${seq8}) ≠ ID en 5 (${currentLotId5})`
+                        });
+                        pushUnique(lineMarks[loteStart], {
+                            start: 83, end: 98, type: 'info',
+                            note: 'Este es el ID de lote en 5 que no coincide con el 8 correspondiente'
+                        });
+                    } else {
+                        pushUnique(lineMarks[i], {
+                            start: 91, end: 106, type: 'ok',
+                            note: 'ID de lote en 8 coincide con el registrado en 5'
+                        });
+                    }
+                }
+
+                // Secuencia global entre lotes (usa el consecutivo del 8)
+                if (/^\d{7}$/.test(seq8)) {
+                    const seq8Num: number = parseInt(seq8, 10);
+                    if (lastLotSeq === null) {
+                        lastLotSeq = seq8Num;
+                        // primera vez: ok suave
+                        pushUnique(lineMarks[i], {
+                            start: 99, end: 106, type: 'ok',
+                            note: `Consecutivo global base ${pad7(seq8Num)}`
+                        });
+                    } else {
+                        const expectedNum: number = lastLotSeq + 1;
+                        if (seq8Num !== expectedNum) {
+                            pushUnique(lineMarks[i], {
+                                start: 99, end: 106, type: 'error',
+                                note: `Consecutivo de lote esperado ${pad7(expectedNum)}, encontrado ${seq8}`
+                            });
+                            // avanzamos el cursor a lo encontrado para seguir comparando desde ahí
+                            lastLotSeq = seq8Num;
+                        } else {
+                            pushUnique(lineMarks[i], {
+                                start: 99, end: 106, type: 'ok',
+                                note: `Consecutivo de lote correcto (${seq8})`
+                            });
+                            lastLotSeq = seq8Num;
+                        }
+                    }
+                }
+
+                // (el resto de tus checks del 8 se mantienen igual aquí)
+            }
+
 
             // cerrar lote
             loteStart = -1
@@ -400,6 +730,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             sumDeb = BigInt(0)
             sumCred = BigInt(0)
             sumControl = BigInt(0)
+            // se reseteá el ID del lote en curso
+            currentLotId5 = null;
         } else if (t === '9') {
             if (first9Index === -1) {
                 first9Index = i;
@@ -445,12 +777,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 1, end: 7, type: 'error',
-                note: `Lotes: esperado ${expLots}, declarado ${decLots}`
+                note: `Lotes ❌ Esperado ${expLots}, declarado ${decLots}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 1, end: 7, type: 'ok',
-                note: `Lotes OK (${expLots})`
+                note: `Lotes ✅ (${expLots})`
             });
         }
 
@@ -459,12 +791,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 7, end: 13, type: 'error',
-                note: `Bloques: esperado ${expBlocks}, declarado ${decBlocks}`
+                note: `Bloques ❌ Esperado ${expBlocks}, declarado ${decBlocks}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 7, end: 13, type: 'ok',
-                note: `Bloques OK (${expBlocks})`
+                note: `Bloques ✅ (${expBlocks})`
             });
         }
 
@@ -473,12 +805,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 13, end: 21, type: 'error',
-                note: `Trans/Adenda: esperado ${expTranAd}, declarado ${decTranAd}`
+                note: `Trans/Adenda ❌ Esperado ${expTranAd}, declarado ${decTranAd}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 13, end: 21, type: 'ok',
-                note: `Trans/Adenda OK (${fmt(expTranAd)})`
+                note: `Trans/Adenda ✅ (${fmt(expTranAd)})`
             });
         }
 
@@ -487,12 +819,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 21, end: 31, type: 'error',
-                note: `Totales de Control: esperado ${expCtrl.toString()}, declarado ${decCtrl.toString()}`
+                note: `Totales de Control ❌ Esperado ${expCtrl.toString()}, declarado ${decCtrl.toString()}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 21, end: 31, type: 'ok',
-                note: `Totales Control OK (${fmt(expCtrl.toString())})`
+                note: `Totales Control ✅ (${fmt(expCtrl.toString())})`
             });
         }
 
@@ -501,12 +833,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 31, end: 49, type: 'error',
-                note: `Débitos: esperado ${fmtCentsTxt(expDeb, ',', '.')}, declarado ${fmtCentsTxt(decDeb, ',', '.')}`
+                note: `Débitos ❌ Esperado ${fmtCentsTxt(expDeb, ',', '.')}, declarado ${fmtCentsTxt(decDeb, ',', '.')}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 31, end: 49, type: 'ok',
-                note: `Débitos OK (${fmtCentsTxt(expDeb, ',', '.')})`
+                note: `Débitos ✅ (${fmtCentsTxt(expDeb, ',', '.')})`
             });
         }
 
@@ -515,12 +847,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             ok9 = false;
             pushUnique(lineMarks[first9Index], {
                 start: 49, end: 67, type: 'error',
-                note: `Créditos: esperado ${fmtCentsTxt(expCred, ',', '.')}, declarado ${fmtCentsTxt(decCred, ',', '.')}`
+                note: `Créditos ❌ Esperado ${fmtCentsTxt(expCred, ',', '.')}, declarado ${fmtCentsTxt(decCred, ',', '.')}`
             });
         } else {
             pushUnique(lineMarks[first9Index], {
                 start: 49, end: 67, type: 'ok',
-                note: `Créditos OK (${fmtCentsTxt(expCred, ',', '.')})`
+                note: `Créditos ✅ (${fmtCentsTxt(expCred, ',', '.')})`
             });
         }
 
