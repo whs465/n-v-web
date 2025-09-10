@@ -32,6 +32,11 @@ type WorkerOutMsg =
 // Extensión opcional para avisar “corté en prechecks”
 type WorkerDoneMsg = WorkerOutMsg & { precheckFailed?: boolean }
 
+type AllowedInfo = {
+    allowed: Set<string> | null
+    label: string // para tooltip
+}
+
 // ✅ Tipar el contexto del worker (nada de `any`)
 declare const self: DedicatedWorkerGlobalScope
 
@@ -129,6 +134,31 @@ const dayOfYear = (yyyy: number, mm: number, dd: number): number | null => {
     return Math.floor((d.getTime() - start.getTime()) / 86400000) + 1
 }
 
+const norm = (s: string) => (s || '').trim().toUpperCase()
+
+function getAllowedClassesForLot(ts: string, lotClass: string, desc: string): AllowedInfo {
+    const t = norm(ts)
+    const c = norm(lotClass)
+    const d = norm(desc)
+
+    // Regla 1: PPD/CTX + 220 + PRENOTIFICAC -> 33, 23, 53 
+    if ((t === 'PPD' || t === 'CTX') && c === '220' && d.startsWith('PRENOTIFIC')) {
+        return { allowed: new Set(['33', '23', '53']), label: 'PPD/CTX 220 PRENOTIFIC → {33,23,53}' }
+    }
+
+    // Regla 2: PPD/CTX + 220 + PAGOS -> 32, 22
+    if ((t === 'PPD' || t === 'CTX') && c === '220' && d.startsWith('PAGOS')) {
+        return { allowed: new Set(['32', '22', '52']), label: 'PPD/CTX 220 PAGOS → {32,22,52}' }
+    }
+
+    // Regla 3: PPD + 225 + TRASLADOS -> 27, 37
+    if (t === 'PPD' && c === '225' && d.startsWith('TRASLADOS')) {
+        return { allowed: new Set(['27', '37', '55']), label: 'PPD 225 TRASLADOS → {27,37,55}' }
+    }
+
+    return { allowed: null, label: '' } // sin restricción
+}
+
 // ===== core =====
 function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     const compact = rawCompact
@@ -166,6 +196,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
         }
     }
 
+    let currentLotClass5: string | null = null;   // clase 2–4 capturada del 5
 
     // — LOTE: ID 5 vs 8 y secuencia global de lotes —
     let currentLotId5: string | null = null;   // concat 84–98 del reg 5 (8+7)
@@ -274,6 +305,11 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let countDeb6 = 0
     let countCred6 = 0
 
+    let lotClass5: string | null = null
+    let lotTS5: string | null = null
+    let lotDesc5: string | null = null
+    let allowed6ForLot: AllowedInfo = { allowed: null, label: '' }
+
     let lotRec6Code: string | null = null
     let lotRec6Mismatch = false
 
@@ -282,6 +318,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let expectedCheckDigitInLot: string | null = null; // 1 char (12)
 
     const step = Math.max(1, Math.floor(recsCount / 20)) // ~5%
+
+    console.log('[worker] prechecks', lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
 
     for (let i = 0; i < recsCount; i++) {
         const off = i * 106
@@ -294,7 +332,34 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             lineReason[i] = 'Tipo de registro inválido (columna 1).'
         }
 
-        if (t === '5') {
+
+        if (t === '1') {
+            // === Reg. 1: Fecha de creación (24–31) ===
+            // Posiciones 24–31 -> slice(23, 31) en base 0
+            const fechaStr = r.slice(23, 31); // AAAAMMDD
+
+            // Parse
+            const yyyy = parseInt(fechaStr.slice(0, 4), 10);
+            const mm = parseInt(fechaStr.slice(4, 6), 10);
+            const dd = parseInt(fechaStr.slice(6, 8), 10);
+
+            const doy = dayOfYear(yyyy, mm, dd); // ya la usas con el reg. 5
+            if (doy === null) {
+                // Fecha inválida
+                lineStatus[i] = 'error';
+                pushUnique(lineMarks[i], {
+                    start: 23, end: 31, type: 'error',
+                    note: `Fecha de creación inválida (AAAAMMDD=${fechaStr})`
+                });
+            } else {
+                // Fecha válida (marcado suave)
+                pushUnique(lineMarks[i], {
+                    start: 23, end: 31, type: 'ok',
+                    note: `Fecha de creación válida (${fechaStr})`
+                });
+            }
+        }
+        else if (t === '5') {
             fileCount5++
             // console.log('[worker] lote abre', { idx: i });
             // abre lote
@@ -305,11 +370,26 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             sumCred = BigInt(0)
             sumControl = BigInt(0)
 
+            lotClass5 = r.slice(1, 4)      // 2–4
+            lotTS5 = r.slice(50, 53)     // 51–53
+            lotDesc5 = r.slice(53, 63)     // 54–63
+            allowed6ForLot = getAllowedClassesForLot(lotTS5, lotClass5, lotDesc5)
+
             lotRec6Code = null
             lotRec6Mismatch = false
 
             expectedRecipientInLot = null;
             expectedCheckDigitInLot = null;
+
+            // Clase de transacción del lote (5): posiciones 2–4 => slice(1,4)
+            currentLotClass5 = r.slice(1, 4);
+
+            // (opcional, pinta suave en el 5)
+            pushUnique(lineMarks[i], {
+                start: 1, end: 4, type: 'info',
+                note: `Clase del lote: ${currentLotClass5}`
+            });
+
 
             // === Reg. 5: Fecha (72–79) y Juliano (80–82) ===
             const fechaStr = r.slice(71, 79)   // AAAAMMDD
@@ -379,6 +459,32 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             }
 
         } else if (t === '6' && loteStart >= 0) {
+
+            // Clase de transacción del 6 (2–3)
+            const code6 = r.slice(1, 3)
+
+            if (allowed6ForLot.allowed) {
+                if (!allowed6ForLot.allowed.has(code6)) {
+                    pushUnique(lineMarks[i], {
+                        start: 1, end: 3, type: 'error',
+                        note: `Clase 6 (${code6}) no permitida para el lote: ${allowed6ForLot.label}`
+                    })
+                    // si querés, también podés marcar el 5 de referencia:
+                    if (loteStart >= 0) {
+                        pushUnique(lineMarks[loteStart], {
+                            start: 1, end: 63, type: 'info',
+                            note: `Este lote restringe clase 6 a ${Array.from(allowed6ForLot.allowed).join(', ')}`
+                        })
+                    }
+                } else {
+                    // feedback suave de OK
+                    pushUnique(lineMarks[i], {
+                        start: 1, end: 3, type: 'ok',
+                        note: `Clase 6 (${code6}) permitida (${allowed6ForLot.label})`
+                    })
+                }
+            }
+
             if (current6Index !== null) {
                 if (current6AllowsAdenda && current7Count === 0) {
                     pushUnique(lineMarks[current6Index], {
@@ -675,7 +781,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             let ok = true
             let okTrans = true, okCtrl = true;
             const okCred = true
-            
+
             // Transacciones
             if (gotTrans !== declaredTrans) {
                 okTrans = false;
@@ -704,6 +810,35 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     start: 20, end: 38, type: 'ok',
                     note: `Débitos ✅ (${fmtMoney(declaredDeb)})`
                 })
+            }
+
+            {// --- Clase de transacción 5 (2–4) vs 8 (2–4) ---
+                const class8 = r.slice(1, 4);   // posiciones 2–4 en el 8
+
+                if (currentLotClass5 !== null) {
+                    if (class8 !== currentLotClass5) {
+                        // Marca error en el 8 y referencia en el 5
+                        pushUnique(lineMarks[i], {
+                            start: 1, end: 4, type: 'error',
+                            note: `Clase en 8 (${class8}) ≠ clase en 5 (${currentLotClass5})`
+                        });
+                        pushUnique(lineMarks[loteStart], {
+                            start: 1, end: 4, type: 'info',
+                            note: `Clase del lote (5): ${currentLotClass5}`
+                        });
+
+                        // (opcional) refleja en el estado del lote para que se pinte rojo
+                        // si ya usás 'checks' y pintás 5..8 en rojo cuando hay errores:
+                        checks.push('Clase 5 vs 8 no coincide');
+                        ok = false;   // si querés que esta regla haga fallar el lote
+                    } else {
+                        // Ok visual en el 8
+                        pushUnique(lineMarks[i], {
+                            start: 1, end: 4, type: 'ok',
+                            note: `Clase 8 coincide con 5 (${class8})`
+                        });
+                    }
+                }
             }
 
             // --- Créditos (39–56) ---
@@ -856,6 +991,13 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             lotRec6Mismatch = false;
             expectedRecipientInLot = null;
             expectedCheckDigitInLot = null;
+            lotClass5 = null
+            lotTS5 = null
+            lotDesc5 = null
+            allowed6ForLot = { allowed: null, label: '' }
+            currentLotClass5 = null;
+            currentLotClass5 = null;
+
         }
         else if (t === '9') {
             if (first9Index === -1) {

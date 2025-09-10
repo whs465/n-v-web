@@ -63,6 +63,147 @@ export default function Page() {
         timer?: number
     }
 
+    type StructureCheck = {
+        ok: boolean
+        errors: string[]
+        badIndex: number | null     // primer índice problemático
+    }
+
+    function validateNachamStructure(records: string[]): StructureCheck {
+        const errs: string[] = []
+        let badIndex: number | null = null
+
+        if (records.length === 0) {
+            return { ok: false, errors: ['Archivo vacío.'], badIndex: 0 }
+        }
+
+        // 1) Primer registro debe ser 1 y debe existir exactamente uno
+        const firstType = records[0][0]
+        if (firstType !== '1') {
+            errs.push('El primer registro debe ser de tipo 1 (encabezado).')
+            badIndex ??= 0
+        }
+        const count1 = records.filter(r => r[0] === '1').length
+        if (count1 !== 1) {
+            errs.push(`Debe existir exactamente 1 registro tipo 1. Encontrados: ${count1}.`)
+            badIndex ??= 0
+        }
+
+        // 2) Recorrido con autómata por lotes
+        let openLots = 0
+        let insideLot = false
+        let expecting: '6-or-8' | '7-or-6-or-8' | '9-only' | null = null
+        let lastNon9Index = -1
+        let lastType: string | null = null
+        let have6InCurrentLot = false
+        let lastWas6 = false
+
+        // A partir de la segunda línea
+        for (let i = 1; i < records.length; i++) {
+            const r = records[i]
+            if (!r) continue
+            const t = r[0]
+
+            // Registrar última no-9 para verificar 9s solo al final
+            if (t !== '9') lastNon9Index = i
+
+            // Si ya entramos en zona de 9s, todo lo que siga debe ser 9
+            if (expecting === '9-only' && t !== '9') {
+                errs.push(`Una vez iniciados los registros 9 de cierre, no puede aparecer tipo ${t} en línea ${i + 1}.`)
+                badIndex ??= i
+            }
+
+            if (t === '5') {
+                // Debe estar fuera o justo después de cerrar otro lote
+                if (insideLot) {
+                    errs.push(`Se detectó un nuevo lote (5) sin cerrar el anterior con 8. Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                insideLot = true
+                openLots++
+                have6InCurrentLot = false
+                lastWas6 = false
+                expecting = '6-or-8' // tras 5 debe venir 6 (o, si lote vacío fuese inválido, 8 cerraría; lo marcamos luego)
+            }
+            else if (t === '6') {
+                if (!insideLot) {
+                    errs.push(`Registro 6 fuera de lote (no hay 5 abierto). Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                have6InCurrentLot = true
+                lastWas6 = true
+                expecting = '7-or-6-or-8' // tras 6 puede venir 7 (adendas), otro 6 o cerrar con 8
+            }
+            else if (t === '7') {
+                if (!insideLot) {
+                    errs.push(`Registro 7 fuera de lote (no hay 5 abierto). Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                if (!lastWas6) {
+                    errs.push(`Registro 7 sin un 6 inmediatamente antes en el mismo lote. Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                // siguen pudiendo venir más 7, o un 6 nuevo, o cerrar con 8
+                expecting = '7-or-6-or-8'
+                lastWas6 = false
+            }
+            else if (t === '8') {
+                if (!insideLot) {
+                    errs.push(`Registro 8 sin lote abierto (no hay 5 correspondiente). Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                if (!have6InCurrentLot) {
+                    errs.push(`Lote cerrado con 8 sin registros 6 dentro. Línea ${i + 1}.`)
+                    badIndex ??= i
+                }
+                openLots--
+                insideLot = false
+                expecting = null // puede comenzar otro 5 o terminar con 9
+                lastWas6 = false
+            }
+            else if (t === '9') {
+                // Marca que a partir de ahora sólo 9
+                expecting = '9-only'
+                // ok
+            }
+            else if (t === '1') {
+                errs.push(`Se encontró un segundo registro tipo 1 en línea ${i + 1}.`)
+                badIndex ??= i
+            }
+            else {
+                errs.push(`Tipo de registro inválido '${t}' en línea ${i + 1}.`)
+                badIndex ??= i
+            }
+
+            lastType = t
+        }
+
+        // 3) Lote sin cerrar
+        if (openLots !== 0 || insideLot) {
+            errs.push('Existen lotes (5) que no fueron cerrados con 8.')
+            badIndex ??= Math.max(1, lastNon9Index)
+        }
+
+        // 4) Debe terminar con 9 (al menos uno)
+        if (records[records.length - 1][0] !== '9') {
+            errs.push('El archivo debe finalizar con uno o más registros 9.')
+            badIndex ??= records.length - 1
+        }
+
+        // 5) No pueden existir 9 en medio del archivo
+        for (let i = 1; i < records.length; i++) {
+            const t = records[i][0]
+            if (t === '9' && i < lastNon9Index) {
+                errs.push(`Se encontró un registro 9 antes del final del archivo. Línea ${i + 1}.`)
+                badIndex ??= i
+                break
+            }
+        }
+
+        return { ok: errs.length === 0, errors: errs, badIndex }
+    }
+
+
     const removeToast = (id: number) => {
         setToasts((prev) => {
             // limpiar timers para evitar fugas
@@ -126,7 +267,12 @@ export default function Page() {
 
     const showError = (msg: string) => showErrors([msg])
 
-    const esDevolucion = (c: string) => c.length >= 106 && c.slice(13, 23).trim() === '011111111'
+    // ¿Es devolución? (R1 pos 14–23 = "011111111")
+    const isDevolucion = useMemo(() => {
+        if (records.length === 0) return false
+        const r0 = records[0]
+        return r0[0] === '1' && /^ ?011111111$/.test(r0.slice(13, 23))
+    }, [records])
 
     const firstNineIdx = useMemo(
         () => records.findIndex(r => r?.[0] === '9'),
@@ -152,7 +298,16 @@ export default function Page() {
 
     const errCount = (lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
         + (globalErrors?.length ?? 0);
-    const isOk = !isValidating && isNachamValid !== false && (lineStatus?.length ?? 0) > 0 && errCount === 0
+    //console.log('[ui] errCount=', lineMarks?.flat().filter(m => m.type === 'error'))
+
+    // Archivo válido normal (NO devolución): worker terminó, sin errores
+    const isFullyValid = useMemo(() => {
+        const hasLines = (lineStatus?.length ?? 0) > 0
+        return !isValidating && isNachamValid === true && hasLines && errCount === 0
+    }, [isValidating, isNachamValid, lineStatus, errCount])
+
+    // Export habilitado: válido normal o devolución
+    const canExport = isFullyValid || isDevolucion
 
     // === Reset duro antes de cargar otro archivo ===
     const hardResetUI = () => {
@@ -171,7 +326,8 @@ export default function Page() {
         if (!lineStatus?.length) return
         console.log('[ui] validation DONE. Num Registros=', records.length,
             'lineStatus=', lineStatus.length,
-            'globalErrors=', globalErrors)
+            'globalErrors=', globalErrors,
+            'errLineas=', lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
     }, [isValidating, lineStatus, globalErrors, records.length])
 
     // === Cargar archivo + preflight + lanzar worker ===
@@ -188,6 +344,9 @@ export default function Page() {
             const compact = text.replace(/\r?\n/g, '')
             const recs = compact.match(/.{106}/g) || []
 
+            const r0 = recs[0] ?? ''
+            const isDevolucionLocal = r0[0] === '1' && /^ ?011111111$/.test(r0.slice(13, 23))
+
             setFileName(file.name)
             input.value = ''
             setRecords(recs)
@@ -198,9 +357,19 @@ export default function Page() {
             const multiple106 = (compact.length % 106) === 0
             if (!multiple106) msgs.push('El número de caracteres del archivo no es múltiplo de 106.')
 
+            const struct = validateNachamStructure(recs)
+            if (!struct.ok) {
+                // marca visual desde el primer problema
+                setBadRowSet(new Set())                // aquí no sabemos filas con tipo inválido (ya lo hacés aparte si querés)
+                setBadFromIndex(struct.badIndex ?? 0)  // guía roja desde ahí
+                setIsNachamValid(false)                // bloquea export
+                showErrors(struct.errors, 12000)       // tu toast de errores
+                // NO lanzar worker => return
+                return
+            }
+
             // 2) firma en Tipo 1 pos 14–23 => slice(13,23).trim()
             let firmaOk = false
-            const r0 = recs[0] // string | undefined
 
             if (typeof r0 === 'string') {
                 const isType1 = r0[0] === '1'
@@ -241,8 +410,8 @@ export default function Page() {
             }
 
 
-            if (esDevolucion(compact)) {
-                setIsNachamValid(true)          // habilita export
+            if (isDevolucionLocal) {
+                setIsNachamValid(true)        // habilita export
                 setBadRowSet(new Set())         // sin errores visuales
                 setBadFromIndex(null)
                 // limpiar cualquier resultado previo del worker
@@ -496,7 +665,6 @@ export default function Page() {
     // === Export Excel (6 + adenda 7 al lado) ===
     const exportExcel = () => {
         if (!records.length) return
-        const canExport = isOk || esDevolucion
         if (!canExport) {
             showError('No se puede exportar: el archivo presenta errores.')
             return
@@ -547,58 +715,41 @@ export default function Page() {
             {/* Header */}
             <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
                 <div className="max-w-[1000px] mx-auto flex items-center justify-between py-2 px-4">
-                    <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">
-                        Visor de archivos NACHAM
-                    </h1>
+                    <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">Visor de archivos NACHAM</h1>
 
                     <div className="flex items-center space-x-4">
                         {fileName && (
                             <div className="flex items-center text-gray-700 text-sm truncate max-w-xs">
                                 <span className="truncate">{fileName}</span>
 
-                                {/* Archivo no NACHAM */}
+                                {/* Archivo no NACHAM (errores duros de formato/firma) */}
                                 {isNachamValid === false && (
                                     <span className="ml-2 px-2 py-0.5 text-xs rounded bg-red-100 text-red-700 border border-red-300">
                                         no NACHAM
                                     </span>
                                 )}
 
-                                {/* Progreso validación (solo cuando realmente valida) */}
-                                {isValidating && progress > 0 && progress < 100 && (
+                                {/* Progreso SOLO cuando realmente valida (no en devoluciones) */}
+                                {!isDevolucion && isValidating && progress > 0 && progress < 100 && (
                                     <div className="ml-3 flex items-center gap-2 text-sm text-[#2D77C2]">
-                                        <span>Validando… {progress}%</span>
+                                        <span>Validando archivo… {progress}%</span>
                                         <div className="w-28 h-1.5 bg-gray-200 rounded">
-                                            <div
-                                                className="h-1.5 bg-[#2D77C2] rounded"
-                                                style={{ width: `${progress}%` }}
-                                            />
+                                            <div className="h-1.5 bg-[#2D77C2] rounded" style={{ width: `${progress}%` }} />
                                         </div>
                                     </div>
                                 )}
 
-                                {/* Resultado OK (no devolución): escudo + export */}
-                                {!isValidating && isOk && (
+                                {/* ✅ Válido normal: escudo + export */}
+                                {!isDevolucion && isFullyValid && (
                                     <>
-                                        <span
-                                            className="ml-2 inline-flex items-center text-green-600"
-                                            title="Validación OK"
-                                        >
-                                            <svg
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                width="20"
-                                                height="20"
-                                                viewBox="0 0 24 24"
-                                                fill="none"
-                                                stroke="currentColor"
-                                                strokeWidth="2"
-                                                strokeLinecap="round"
-                                                strokeLinejoin="round"
-                                            >
+                                        <span className="ml-2 inline-flex items-center text-green-600" title="Validación OK">
+                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
+                                                viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                                 <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
                                                 <path d="M9 12l2 2 4-4" />
                                             </svg>
                                         </span>
-
                                         <button
                                             type="button"
                                             onClick={exportExcel}
@@ -609,12 +760,12 @@ export default function Page() {
                                     </>
                                 )}
 
-                                {/* Devolución: badge “Devolución” + export habilitado */}
-                                {!isValidating && !isOk && isNachamValid === true && (
+                                {/* 🔵 Devolución: badge “Devolución” + export; SIN escudo verde */}
+                                {isDevolucion && (
                                     <>
                                         <span
                                             className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-300"
-                                            title="Archivo de devolución: validación omitida"
+                                            title="Archivo de devolución (se omiten validaciones de consistencia)"
                                         >
                                             Devolución
                                         </span>
@@ -628,13 +779,20 @@ export default function Page() {
                                     </>
                                 )}
 
-                                {/* Errores: mostrar badge y NO mostrar export */}
-                                {!isValidating && !isOk && isNachamValid !== true && errCount > 0 && (
+                                {/* ⚠ Errores (no devolución): badge y SIN export */}
+                                {!isValidating && isNachamValid === true && !isDevolucion && errCount > 0 && (
                                     <div className="ml-3 flex items-center gap-2 text-sm">
                                         <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300">
-                                            ⚠ Errores ({errCount})
-                                        </span>
+                                            💩 Errores ({errCount})
+                                        </span>                                        <button
+                                            type="button"
+                                            onClick={exportExcel}
+                                            className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
+                                            title="Exportar a Excel"
+                                            dangerouslySetInnerHTML={{ __html: svgExportIcono }}
+                                        />
                                     </div>
+
                                 )}
                             </div>
                         )}
@@ -642,20 +800,15 @@ export default function Page() {
                         <label
                             htmlFor="fileInput"
                             className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 active:bg-green-800
-                 text-white text-sm font-medium rounded shadow cursor-pointer transition"
+        text-white text-sm font-medium rounded shadow cursor-pointer transition"
                         >
                             Seleccionar NACHAM
                         </label>
-                        <input
-                            id="fileInput"
-                            type="file"
-                            accept="*.*"
-                            className="hidden"
-                            onChange={handleFile}
-                        />
+                        <input id="fileInput" type="file" accept="*.*" className="hidden" onChange={handleFile} />
                     </div>
                 </div>
             </header>
+
 
             {/* Main */}
             <main className="p-4 space-y-6">
