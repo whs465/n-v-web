@@ -240,12 +240,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             lineStatus[0] = 'error';
             pushUnique(lineMarks[0], {
                 start: 35, end: 36, type: 'error',
-                note: `Identificador incorrecto. Esperado: ${expectedId}, Actual: ${actualId} (serial ${serialFromName}).`
+                note: `Identificador de archivo ❌. Esperado: ${expectedId}, Actual: ${actualId} (serial ${serialFromName}).`
             });
         } else {
             pushUnique(lineMarks[0], {
                 start: 35, end: 36, type: 'ok',
-                note: `Identificador correcto (${expectedId}) derivado del serial ${serialFromName}.`
+                note: `Identificador de archivo ✅ (${expectedId}) derivado del serial ${serialFromName}.`
             });
         }
     } else if (!expectedId) {
@@ -303,7 +303,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let sumControl = BigInt(0)
 
     let countDeb6 = 0
-    let countCred6 = 0
 
     let lotClass5: string | null = null
     let lotTS5: string | null = null
@@ -318,6 +317,14 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let expectedCheckDigitInLot: string | null = null; // 1 char (12)
 
     const step = Math.max(1, Math.floor(recsCount / 20)) // ~5%
+
+    // —— Seguimiento PRENOTIFIC ——
+    // Bandera por lote, y primer 6 encontrado dentro de ese lote
+    let lotIsPrenotific = false
+    let lotFirst6Index: number | null = null
+
+    // Secuencia global entre lotes PRENOTIFIC (primer 6 de cada lote)
+    let prenotificExpectedSeq: number | null = null
 
     console.log('[worker] prechecks', lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
 
@@ -349,13 +356,13 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 lineStatus[i] = 'error';
                 pushUnique(lineMarks[i], {
                     start: 23, end: 31, type: 'error',
-                    note: `Fecha de creación inválida (AAAAMMDD=${fechaStr})`
+                    note: `Fecha de creación ❌ (AAAAMMDD=${fechaStr})`
                 });
             } else {
                 // Fecha válida (marcado suave)
                 pushUnique(lineMarks[i], {
                     start: 23, end: 31, type: 'ok',
-                    note: `Fecha de creación válida (${fechaStr})`
+                    note: `Fecha de creación ✅ (${fechaStr})`
                 });
             }
         }
@@ -383,6 +390,19 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
             // Clase de transacción del lote (5): posiciones 2–4 => slice(1,4)
             currentLotClass5 = r.slice(1, 4);
+
+            lotIsPrenotific = false
+            lotFirst6Index = null
+
+            // Descripción 5: pos 54–63 => slice(53,63)
+            const lotDesc = r.slice(53, 63).trim().toUpperCase()
+            if (lotDesc.startsWith('PRENOTIFIC')) {
+                lotIsPrenotific = true
+                pushUnique(lineMarks[i], {
+                    start: 53, end: 63, type: 'info',
+                    note: 'Lote PRENOTIFIC'
+                })
+            }
 
             // (opcional, pinta suave en el 5)
             pushUnique(lineMarks[i], {
@@ -416,12 +436,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     lineStatus[i] = 'error'
                     pushUnique(lineMarks[i], {
                         start: 79, end: 82, type: 'error',
-                        note: `Juliano incorrecto. Esperado: ${expected}, Actual: ${julianStr}`
+                        note: `Juliano ❌. Esperado: ${expected}, Actual: ${julianStr}`
                     })
                 } else {
                     pushUnique(lineMarks[i], {
                         start: 79, end: 82, type: 'ok',
-                        note: `Juliano correcto (${julianStr})`
+                        note: `Juliano ✅ (${julianStr})`
                     })
                 }
             }
@@ -435,12 +455,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 if (code5 !== SEQ_CODE_EXPECTED) {
                     pushUnique(lineMarks[i], {
                         start: 83, end: 91, type: 'error',
-                        note: `Código de lote inválido (esperado ${SEQ_CODE_EXPECTED})`
+                        note: `Número de lote ❌ (esperado ${SEQ_CODE_EXPECTED})`
                     });
                 } else {
                     pushUnique(lineMarks[i], {
                         start: 83, end: 91, type: 'ok',
-                        note: 'Código de lote correcto'
+                        note: 'Número de lote ✅'
                     });
                 }
 
@@ -448,12 +468,12 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 if (!/^\d{7}$/.test(seq5)) {
                     pushUnique(lineMarks[i], {
                         start: 91, end: 98, type: 'error',
-                        note: 'Consecutivo de lote inválido (debe ser 7 dígitos 0-padded)'
+                        note: 'Número de lote ❌ (debe ser 7 dígitos 0-padded)'
                     });
                 } else {
                     pushUnique(lineMarks[i], {
                         start: 91, end: 98, type: 'ok',
-                        note: `Consecutivo de lote en 5: ${seq5}`
+                        note: `Número de lote: ${seq5}`
                     });
                 }
             }
@@ -463,24 +483,29 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             // Clase de transacción del 6 (2–3)
             const code6 = r.slice(1, 3)
 
+            // Guardamos SOLO el primer 6 del lote PRENOTIFIC
+            if (lotIsPrenotific && lotFirst6Index === null) {
+                lotFirst6Index = i
+            }
+
             if (allowed6ForLot.allowed) {
                 if (!allowed6ForLot.allowed.has(code6)) {
                     pushUnique(lineMarks[i], {
                         start: 1, end: 3, type: 'error',
-                        note: `Clase 6 (${code6}) no permitida para el lote: ${allowed6ForLot.label}`
+                        note: `Código Transacción (${code6}) ❌ para el lote: ${allowed6ForLot.label}`
                     })
                     // si querés, también podés marcar el 5 de referencia:
                     if (loteStart >= 0) {
                         pushUnique(lineMarks[loteStart], {
                             start: 1, end: 63, type: 'info',
-                            note: `Este lote restringe clase 6 a ${Array.from(allowed6ForLot.allowed).join(', ')}`
+                            note: `Este lote restringe los códigos de transacción a ${Array.from(allowed6ForLot.allowed).join(', ')}`
                         })
                     }
                 } else {
                     // feedback suave de OK
                     pushUnique(lineMarks[i], {
                         start: 1, end: 3, type: 'ok',
-                        note: `Clase 6 (${code6}) permitida (${allowed6ForLot.label})`
+                        note: `Código de Transacción (${code6}) ✅ (${allowed6ForLot.label})`
                     })
                 }
             }
@@ -506,7 +531,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 countDeb6++
             } else {
                 sumCred += val
-                countCred6++
             }
 
             count6++
@@ -744,6 +768,24 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     });
                 }
 
+                // ── Validación: Código Tipo de Registro Adenda (pos 2–3) sólo '05' o '99'
+                const adendaCode = r.slice(1, 3)
+                if (adendaCode !== '05') {
+                    // pinta error sobre 2–3
+                    pushUnique(lineMarks[i], {
+                        start: 1, end: 3, type: 'error',
+                        note: `Código de adenda ❌ (${adendaCode}). Permitido: 05`
+                    })
+                    // si querés marcar la fila como error de lote:
+                    lineStatus[i] = 'error'
+                } else {
+                    // pinta validación OK sobre 2–3 (suave, para tranquilidad del usuario)
+                    pushUnique(lineMarks[i], {
+                        start: 1, end: 3, type: 'ok',
+                        note: `Código de adenda ✅ (${adendaCode})`
+                    })
+                }
+
                 // incrementar contador de adendas vistas para este 6
                 current7Count += 1;
             }
@@ -778,7 +820,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             const gotTrans = count6 + count7;
 
             const checks: string[] = [];
-            let ok = true
             let okTrans = true, okCtrl = true;
             const okCred = true
 
@@ -799,7 +840,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
             const okDeb = (sumDeb === declaredDeb)
             if (!okDeb) {
-                ok = false
                 checks.push(`Débitos esperados ${fmtMoney(declaredDeb)} ≠ suma ${fmtMoney(sumDeb)}`)
                 pushUnique(lineMarks[i], {
                     start: 20, end: 38, type: 'error',
@@ -810,6 +850,77 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                     start: 20, end: 38, type: 'ok',
                     note: `Débitos ✅ (${fmtMoney(declaredDeb)})`
                 })
+            }
+
+            {  // === Reglas PRENOTIFIC: validar ÚNICAMENTE el primer 6 del lote ===
+                if (lotIsPrenotific) {
+                    if (lotFirst6Index === null) {
+                        // No se encontró ningún 6 en el lote PRENOTIFIC
+                        pushUnique(lineMarks[loteStart], {
+                            start: 53, end: 63, type: 'error',
+                            note: 'Lote PRENOTIFIC sin registro 6 ❌'
+                        })
+                        pushUnique(lineMarks[i], {
+                            start: 3, end: 11, type: 'error',
+                            note: 'Cierre de PRENOTIFIC sin detalle (6) ❌'
+                        })
+                    } else {
+                        const i6 = lotFirst6Index
+                        const r6 = compact.slice(i6 * 106, i6 * 106 + 106)
+
+                        // Consecutivo en 6: pos 13–29 => slice(12,29)
+                        const seqStr = r6.slice(12, 29).trim()
+                        const seqNum = /^\d+$/.test(seqStr) ? parseInt(seqStr, 10) : NaN
+
+                        // Zeros 48–62 => slice(47,62)
+                        const field4862 = r6.slice(47, 62)
+                        const isSingleZero = field4862.trim() === '0'
+
+                        // Zeros: marcar ok/error
+                        if (!isSingleZero) {
+                            pushUnique(lineMarks[i6], {
+                                start: 47, end: 62, type: 'error',
+                                note: 'Identificador debe ser 0 en el registro de control ❌'
+                            })
+                        } else {
+                            pushUnique(lineMarks[i6], {
+                                start: 47, end: 62, type: 'ok',
+                                note: 'Identificador 0 ✅'
+                            })
+                        }
+
+                        // Secuencia global entre lotes PRENOTIFIC (solo el PRIMER 6 de cada lote)
+                        if (!Number.isFinite(seqNum)) {
+                            pushUnique(lineMarks[i6], {
+                                start: 12, end: 29, type: 'error',
+                                note: `Consecutivo registro control ❌ (${seqStr})`
+                            })
+                        } else if (prenotificExpectedSeq === null) {
+                            // primer lote PRENOTIFIC: fijamos base
+                            prenotificExpectedSeq = seqNum + 1
+                            pushUnique(lineMarks[i6], {
+                                start: 12, end: 29, type: 'ok',
+                                note: `Consecutivo registro control  base (${seqNum})`
+                            })
+                        } else {
+                            const expected: number = prenotificExpectedSeq
+                            if (seqNum !== expected) {
+                                pushUnique(lineMarks[i6], {
+                                    start: 12, end: 29, type: 'error',
+                                    note: `Registro de control ❌. Esperado: ${expected}, encontrado: ${seqNum}`
+                                })
+                                // sincronizamos para el siguiente lote
+                                prenotificExpectedSeq = seqNum + 1
+                            } else {
+                                pushUnique(lineMarks[i6], {
+                                    start: 12, end: 29, type: 'ok',
+                                    note: `Consecutivo registro de control ✅ (${seqNum})`
+                                })
+                                prenotificExpectedSeq = expected + 1
+                            }
+                        }
+                    }
+                }
             }
 
             {// --- Clase de transacción 5 (2–4) vs 8 (2–4) ---
@@ -830,7 +941,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                         // (opcional) refleja en el estado del lote para que se pinte rojo
                         // si ya usás 'checks' y pintás 5..8 en rojo cuando hay errores:
                         checks.push('Clase 5 vs 8 no coincide');
-                        ok = false;   // si querés que esta regla haga fallar el lote
+                        // si querés que esta regla haga fallar el lote
                     } else {
                         // Ok visual en el 8
                         pushUnique(lineMarks[i], {
@@ -847,7 +958,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             if (countDeb6 > 0) {
                 const okCredZero = (declaredCred === 0n)
                 if (!okCredZero) {
-                    ok = false
                     checks.push(`Créditos en 8 deben ser 0 para lotes de débito; encontrado ${fmtMoney(declaredCred)}`)
                     pushUnique(lineMarks[i], {
                         start: 38, end: 56, type: 'error',
@@ -863,7 +973,6 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 // Lote sin débitos => validación normal (crédito informado = suma de créditos de reg 6)
                 const okCred = (sumCred === declaredCred)
                 if (!okCred) {
-                    ok = false
                     checks.push(`Créditos esperados ${fmtMoney(declaredCred)} ≠ suma ${fmtMoney(sumCred)}`)
                     pushUnique(lineMarks[i], {
                         start: 38, end: 56, type: 'error',
@@ -900,24 +1009,24 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             if (code8 !== SEQ_CODE_EXPECTED) {
                 pushUnique(lineMarks[i], {
                     start: 91, end: 99, type: 'error',
-                    note: `Código de lote en 8 inválido (esperado ${SEQ_CODE_EXPECTED})`
+                    note: `Número de lote en 8 ❌ Esperado ${SEQ_CODE_EXPECTED}`
                 });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 91, end: 99, type: 'ok',
-                    note: 'Código de lote en 8 correcto'
+                    note: 'Número de lote en 8 ✅'
                 });
             }
 
             if (!/^\d{7}$/.test(seq8)) {
                 pushUnique(lineMarks[i], {
                     start: 99, end: 106, type: 'error',
-                    note: 'Consecutivo de lote en 8 inválido (7 dígitos 0-padded)'
+                    note: 'Número de lote en 8 ❌ (7 dígitos 0-padded)'
                 });
             } else {
                 pushUnique(lineMarks[i], {
                     start: 99, end: 106, type: 'ok',
-                    note: `Consecutivo de lote en 8: ${seq8}`
+                    note: `Número de lote en 8: ${seq8}`
                 });
             }
 
@@ -985,7 +1094,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             count6 = 0; count7 = 0;
             sumDeb = 0n; sumCred = 0n; sumControl = 0n;
             countDeb6 = 0
-            countCred6 = 0
+
             currentLotId5 = null;
             lotRec6Code = null;
             lotRec6Mismatch = false;
@@ -997,7 +1106,8 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             allowed6ForLot = { allowed: null, label: '' }
             currentLotClass5 = null;
             currentLotClass5 = null;
-
+            lotIsPrenotific = false
+            lotFirst6Index = null
         }
         else if (t === '9') {
             if (first9Index === -1) {

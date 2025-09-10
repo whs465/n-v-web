@@ -73,131 +73,77 @@ export default function Page() {
         const errs: string[] = []
         let badIndex: number | null = null
 
-        if (records.length === 0) {
-            return { ok: false, errors: ['Archivo vacío.'], badIndex: 0 }
-        }
-
-        // 1) Primer registro debe ser 1 y debe existir exactamente uno
-        const firstType = records[0][0]
-        if (firstType !== '1') {
-            errs.push('El primer registro debe ser de tipo 1 (encabezado).')
-            badIndex ??= 0
-        }
-        const count1 = records.filter(r => r[0] === '1').length
-        if (count1 !== 1) {
-            errs.push(`Debe existir exactamente 1 registro tipo 1. Encontrados: ${count1}.`)
-            badIndex ??= 0
-        }
-
-        // 2) Recorrido con autómata por lotes
-        let openLots = 0
+        let sawHeader1 = false
         let insideLot = false
-        let expecting: '6-or-8' | '7-or-6-or-8' | '9-only' | null = null
-        let lastNon9Index = -1
-        let lastType: string | null = null
-        let have6InCurrentLot = false
-        let lastWas6 = false
+        let last6Index = -1  // índice del 6 "padre" dentro del lote actual
 
-        // A partir de la segunda línea
-        for (let i = 1; i < records.length; i++) {
+        for (let i = 0; i < records.length; i++) {
             const r = records[i]
-            if (!r) continue
             const t = r[0]
 
-            // Registrar última no-9 para verificar 9s solo al final
-            if (t !== '9') lastNon9Index = i
+            if (t === '1') {
+                if (i !== 0 || sawHeader1) {
+                    errs.push('Registro 1 fuera de lugar o duplicado.')
+                    badIndex ??= i
+                }
+                sawHeader1 = true
+                insideLot = false
+                last6Index = -1
 
-            // Si ya entramos en zona de 9s, todo lo que siga debe ser 9
-            if (expecting === '9-only' && t !== '9') {
-                errs.push(`Una vez iniciados los registros 9 de cierre, no puede aparecer tipo ${t} en línea ${i + 1}.`)
-                badIndex ??= i
-            }
-
-            if (t === '5') {
-                // Debe estar fuera o justo después de cerrar otro lote
+            } else if (t === '5') {
+                // abre lote
                 if (insideLot) {
-                    errs.push(`Se detectó un nuevo lote (5) sin cerrar el anterior con 8. Línea ${i + 1}.`)
+                    errs.push('Nuevo registro 5 sin haber cerrado el lote anterior con 8.')
                     badIndex ??= i
                 }
                 insideLot = true
-                openLots++
-                have6InCurrentLot = false
-                lastWas6 = false
-                expecting = '6-or-8' // tras 5 debe venir 6 (o, si lote vacío fuese inválido, 8 cerraría; lo marcamos luego)
-            }
-            else if (t === '6') {
+                last6Index = -1
+
+            } else if (t === '6') {
                 if (!insideLot) {
-                    errs.push(`Registro 6 fuera de lote (no hay 5 abierto). Línea ${i + 1}.`)
+                    errs.push('Registro 6 fuera de lote (no hay 5 abierto).')
                     badIndex ??= i
                 }
-                have6InCurrentLot = true
-                lastWas6 = true
-                expecting = '7-or-6-or-8' // tras 6 puede venir 7 (adendas), otro 6 o cerrar con 8
-            }
-            else if (t === '7') {
+                // este 6 pasa a ser el "padre" de los 7 siguientes
+                last6Index = i
+
+            } else if (t === '7') {
                 if (!insideLot) {
-                    errs.push(`Registro 7 fuera de lote (no hay 5 abierto). Línea ${i + 1}.`)
+                    errs.push('Registro 7 fuera de lote (no hay 5 abierto).')
                     badIndex ??= i
                 }
-                if (!lastWas6) {
-                    errs.push(`Registro 7 sin un 6 inmediatamente antes en el mismo lote. Línea ${i + 1}.`)
+                // <<< CAMBIO: ya no exigimos "inmediatamente antes", sino "existe un 6 previo en el lote"
+                if (last6Index === -1) {
+                    errs.push('Registro 7 sin un 6 previo en el mismo lote.')
                     badIndex ??= i
                 }
-                // siguen pudiendo venir más 7, o un 6 nuevo, o cerrar con 8
-                expecting = '7-or-6-or-8'
-                lastWas6 = false
-            }
-            else if (t === '8') {
+                // NO reseteamos last6Index para permitir 7 consecutivos
+
+            } else if (t === '8') {
                 if (!insideLot) {
-                    errs.push(`Registro 8 sin lote abierto (no hay 5 correspondiente). Línea ${i + 1}.`)
+                    errs.push('Registro 8 sin lote abierto (no hay 5 antes).')
                     badIndex ??= i
                 }
-                if (!have6InCurrentLot) {
-                    errs.push(`Lote cerrado con 8 sin registros 6 dentro. Línea ${i + 1}.`)
-                    badIndex ??= i
-                }
-                openLots--
+                // cierra lote
                 insideLot = false
-                expecting = null // puede comenzar otro 5 o terminar con 9
-                lastWas6 = false
-            }
-            else if (t === '9') {
-                // Marca que a partir de ahora sólo 9
-                expecting = '9-only'
-                // ok
-            }
-            else if (t === '1') {
-                errs.push(`Se encontró un segundo registro tipo 1 en línea ${i + 1}.`)
+                last6Index = -1
+
+            } else if (t === '9') {
+                // cierre de archivo / relleno: permitido sólo si no hay lote abierto
+                if (insideLot) {
+                    errs.push('Registro 9 dentro de un lote abierto (falta 8).')
+                    badIndex ??= i
+                }
+
+            } else {
+                errs.push(`Tipo de registro inválido en línea ${i + 1}.`)
                 badIndex ??= i
             }
-            else {
-                errs.push(`Tipo de registro inválido '${t}' en línea ${i + 1}.`)
-                badIndex ??= i
-            }
-
-            lastType = t
         }
 
-        // 3) Lote sin cerrar
-        if (openLots !== 0 || insideLot) {
-            errs.push('Existen lotes (5) que no fueron cerrados con 8.')
-            badIndex ??= Math.max(1, lastNon9Index)
-        }
-
-        // 4) Debe terminar con 9 (al menos uno)
-        if (records[records.length - 1][0] !== '9') {
-            errs.push('El archivo debe finalizar con uno o más registros 9.')
-            badIndex ??= records.length - 1
-        }
-
-        // 5) No pueden existir 9 en medio del archivo
-        for (let i = 1; i < records.length; i++) {
-            const t = records[i][0]
-            if (t === '9' && i < lastNon9Index) {
-                errs.push(`Se encontró un registro 9 antes del final del archivo. Línea ${i + 1}.`)
-                badIndex ??= i
-                break
-            }
+        // si terminó el loop con lote abierto:
+        if (insideLot) {
+            errs.push('Archivo termina con un lote abierto (falta registro 8).')
         }
 
         return { ok: errs.length === 0, errors: errs, badIndex }
@@ -328,7 +274,7 @@ export default function Page() {
             'lineStatus=', lineStatus.length,
             'globalErrors=', globalErrors,
             'errLineas=', lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
-    }, [isValidating, lineStatus, globalErrors, records.length])
+    }, [isValidating, lineStatus, globalErrors, records.length, lineMarks])
 
     // === Cargar archivo + preflight + lanzar worker ===
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
