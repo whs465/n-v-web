@@ -208,6 +208,10 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let current6SeqSuffix: string | null = null; // 96–102 (7 dígitos)
     let current7Count: number = 0;               // cuántas 7 asociadas llevamos
 
+    // NUEVO: referencias únicas por 6 (adendas 7)
+    let current7Refs: Set<string> | null = null                   // valores únicos
+    let current7RefFirstIdx: Map<string, number> | null = null    // primera ocurrencia
+
     const pad4 = (n: number) => n.toString().padStart(4, '0');
 
     // — Secuenciación global de registros tipo 6 (88–102 = 8+7) —
@@ -303,6 +307,7 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
     let sumControl = BigInt(0)
 
     let countDeb6 = 0
+    let lotNeedsUniqueAdendaRef = false
 
     let lotClass5: string | null = null
     let lotTS5: string | null = null
@@ -379,8 +384,11 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
 
             lotClass5 = r.slice(1, 4)      // 2–4
             lotTS5 = r.slice(50, 53)     // 51–53
-            lotDesc5 = r.slice(53, 63)     // 54–63
+            lotDesc5 = r.slice(53, 63).trim()     // 54–63
             allowed6ForLot = getAllowedClassesForLot(lotTS5, lotClass5, lotDesc5)
+
+            // NUEVO: sólo si CTX + PAGOS activamos la validación de referencia única
+            lotNeedsUniqueAdendaRef = (lotTS5 === 'CTX' && lotDesc5 === 'PAGOS')
 
             lotRec6Code = null
             lotRec6Mismatch = false
@@ -543,6 +551,14 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             // — Contexto para adendas del 6 —
             current6Index = i;
             current7Count = 0;
+
+            if (lotNeedsUniqueAdendaRef) {
+                current7Refs = new Set()
+                current7RefFirstIdx = new Map()
+            } else {
+                current7Refs = null
+                current7RefFirstIdx = null
+            }
 
             // Indicador de adenda 87–87 => slice(86,87)
             const adendaFlag = r.slice(86, 87);
@@ -761,11 +777,44 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                             note: 'Adenda enlazada al 6 ✅'
                         });
                     }
-                } else {
-                    pushUnique(lineMarks[i], {
-                        start: 87, end: 94, type: 'error',
-                        note: 'Referencia de transacción de 7 ❌'
-                    });
+                }
+
+                // d) Referencia única por 6 (aplica SOLO si el lote lo requiere)
+                if (lotNeedsUniqueAdendaRef && current7Refs && current7RefFirstIdx) {
+                    const rawRef = r.slice(31, 51)   // 32–51
+                    const normRef = rawRef.trim()      // normalizamos (si querés conservar espacios internos, no los toques)
+
+                    if (normRef.length === 0) {
+                        // Referencia vacía: lo marcamos como error (opcional)
+                        pushUnique(lineMarks[i], {
+                            start: 31, end: 51, type: 'error',
+                            note: 'Referencia (pos. 32–51) vacía en adenda'
+                        })
+                        lineStatus[i] = 'error'
+                    } else if (current7Refs.has(normRef)) {
+                        // Duplicado dentro del MISMO 6 → error
+                        pushUnique(lineMarks[i], {
+                            start: 31, end: 51, type: 'error',
+                            note: `Referencia duplicada para este 6: “${normRef}”`
+                        })
+                        // Señalá la primera ocurrencia para ayudar a ubicarla
+                        const firstIdx = current7RefFirstIdx.get(normRef)
+                        if (typeof firstIdx === 'number') {
+                            pushUnique(lineMarks[firstIdx], {
+                                start: 31, end: 51, type: 'info',
+                                note: 'Primera ocurrencia de esta referencia'
+                            })
+                        }
+                        lineStatus[i] = 'error'
+                    } else {
+                        // Primera vez que aparece en este 6 → OK suave
+                        current7Refs.add(normRef)
+                        current7RefFirstIdx.set(normRef, i)
+                        pushUnique(lineMarks[i], {
+                            start: 31, end: 51, type: 'ok',
+                            note: 'Referencia única ✅'
+                        })
+                    }
                 }
 
                 // ── Validación: Código Tipo de Registro Adenda (pos 2–3) sólo '05' o '99'
@@ -805,6 +854,9 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
             current6AllowsAdenda = false;
             current6SeqSuffix = null;
             current7Count = 0;
+
+            current7Refs = null
+            current7RefFirstIdx = null
 
             // === Declarados en 8 ===
             const declaredTrans = parseInt(r.slice(4, 10).trim() || '0', 10); // 5–10

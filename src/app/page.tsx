@@ -273,7 +273,7 @@ export default function Page() {
         console.log('[ui] validation DONE. Num Registros=', records.length,
             'lineStatus=', lineStatus.length,
             'globalErrors=', globalErrors,
-            'errLineas=', lineMarks?.flat().filter(m => m.type === 'error').length ?? 0)
+            'errLineas=', lineMarks?.flat().filter(m => m.type === 'error'))
     }, [isValidating, lineStatus, globalErrors, records.length, lineMarks])
 
     // === Cargar archivo + preflight + lanzar worker ===

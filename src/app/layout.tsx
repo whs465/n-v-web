@@ -39,12 +39,12 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="absolute inset-0 opacity-[0.15] dark:opacity-[0.1]">
             <svg width="100%" height="100%" xmlns="http://www.w3.org/2000/svg">
               <pattern id="binary-pattern" x="0" y="0" width="100" height="100" patternUnits="userSpaceOnUse">
-                <text x="0" y="10" className="text-xs fill-blue-500 dark:fill-blue-400">00001040</text>
+                <text x="0" y="10" className="text-xs fill-blue-500 dark:fill-blue-400">011111111</text>
                 <text x="20" y="20" className="text-xs fill-blue-500 dark:fill-blue-400">PPD  </text>
                 <text x="0" y="30" className="text-xs fill-blue-500 dark:fill-blue-400">ESORO NACIONAL</text>
                 <text x="20" y="40" className="text-xs fill-blue-500 dark:fill-blue-400">000016832</text>
                 <text x="0" y="50" className="text-xs fill-purple-500 dark:fill-purple-400">PRENOTIFICAC</text>
-                <text x="20" y="60" className="text-xs fill-purple-500 dark:fill-purple-400">01001010</text>
+                <text x="20" y="60" className="text-xs fill-purple-500 dark:fill-purple-400">ISTERIO DE HAC</text>
                 <text x="0" y="70" className="text-xs fill-blue-500 dark:fill-blue-400">000016830000009</text>
                 <text x="20" y="80" className="text-xs fill-blue-500 dark:fill-blue-400">NCO REPUBLICA</text>
                 <text x="0" y="90" className="text-xs fill-blue-500 dark:fill-blue-400">8999990902</text>
