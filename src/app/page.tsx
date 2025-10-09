@@ -501,6 +501,18 @@ export default function Page() {
                     { id: 9, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
                     { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
                 ]
+            } else if (p320321 === '05' && ts === 'PPD') {
+                flds = [
+                    { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
+                    { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
+                    { id: 3, name: "Identificación del Originador", length: 13, position: "4-16", value: rec.slice(3, 16) },
+                    { id: 4, name: "Identificación del Originador", length: 30, position: "17-46", value: rec.slice(16, 46) },
+                    { id: 5, name: "Descripción del servicio", length: 15, position: "47-61", value: rec.slice(46, 61) },
+                    { id: 6, name: "Reservado", length: 22, position: "62-83", value: rec.slice(61, 83) },
+                    { id: 7, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
+                    { id: 8, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
+                    { id: 9, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
+                ]
             } else {
                 flds = [
                     { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
