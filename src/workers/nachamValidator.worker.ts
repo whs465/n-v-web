@@ -412,11 +412,24 @@ function validateCompact(rawCompact: string, optionsIn: ValidationOptions) {
                 })
             }
 
-            // (opcional, pinta suave en el 5)
-            pushUnique(lineMarks[i], {
-                start: 1, end: 4, type: 'info',
-                note: `Clase del lote: ${currentLotClass5}`
-            });
+            // --- Validación: Clase de lote (pos. 2–4) solo '200' o '225'
+            const cls = r.slice(1, 4)            // 2–4
+            const allowed = new Set(['200', '220', '225'])
+
+            if (!/^\d{3}$/.test(cls) || !allowed.has(cls)) {
+                // marca error sobre el campo 2–4
+                pushUnique(lineMarks[i], {
+                    start: 1, end: 4, type: 'error',
+                    note: `Clase de lote inválida (${cls}). Valores permitidos: 200 220 o 225`
+                })
+                lineStatus[i] = 'error'            // opcional: marca la fila 5 en rojo
+            } else {
+                // pinta OK suave para que el usuario vea que se validó
+                pushUnique(lineMarks[i], {
+                    start: 1, end: 4, type: 'ok',
+                    note: `Clase de lote válida (${cls})`
+                })
+            }
 
 
             // === Reg. 5: Fecha (72–79) y Juliano (80–82) ===
