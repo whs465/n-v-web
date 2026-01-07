@@ -14,6 +14,7 @@ interface NachamVisorProps {
     lineStatus?: LineStatus[]
     lineMarks?: LineMark[][]
     isClickable?: (idx: number, rec: string) => boolean
+    onScrollerReady?: (el: HTMLDivElement) => void
 }
 
 export default function NachamVisor({
@@ -27,11 +28,18 @@ export default function NachamVisor({
     lineStatus,
     lineMarks,
     isClickable,
+    onScrollerReady
 }: NachamVisorProps) {
     const listRef = useRef<List>(null)
 
     // Set para lookup O(1)
     const badRowSet = useMemo(() => new Set(badRows), [badRows])
+    const outerRef = useRef<HTMLDivElement>(null)
+
+    useEffect(() => {
+        if (outerRef.current && onScrollerReady) onScrollerReady(outerRef.current)
+    }, [onScrollerReady])
+
 
     useEffect(() => {
         listRef.current?.scrollToItem(0, 'start')
@@ -147,21 +155,26 @@ export default function NachamVisor({
         return (
             <div
                 style={style}
-                className={`flex font-mono whitespace-pre overflow-hidden
+                className={`flex w-max font-mono whitespace-pre
       ${canOpen ? 'cursor-pointer hover:bg-[rgb(228,242,251)]' : 'cursor-not-allowed opacity-80'}
       ${rowBg}`}
                 onClick={() => canOpen && onRowClick(index)}
+                onDoubleClick={() => canOpen && onRowClick(index)} // si tu modal es doble click, poné tu handler acá
                 title={rowTitle}
             >
+                {/* ✅ Spacer visual: NO afecta el layout de la fila para eventos */}
+                <span aria-hidden="true" style={{ display: "inline-block", width: "var(--visor-gutter)" }} />
                 {renderWithMarks(rec, marks)}
             </div>
         )
+
     }
 
     return (
         <List
             ref={listRef}
-            className="border border-gray-300 rounded shadow font-mono bg-white"
+            outerRef={outerRef}
+            className="rounded shadow font-mono bg-white"
             height={height}
             itemCount={records.length}
             itemSize={lineHeight}

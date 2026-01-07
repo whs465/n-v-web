@@ -6,6 +6,114 @@ import NachamModal, { Field } from '@/components/NachamModal'
 import * as XLSX from 'xlsx'
 import { useNachamValidator } from '@/hooks/useNachamValidator'
 
+function buildRuler(length: number) {
+    let tens = "";
+    let ones = "";
+    for (let i = 1; i <= length; i++) {
+        tens += i % 10 === 0 ? String((i / 10) % 10) : "·";
+        ones += String(i % 10);
+    }
+    return { tens, ones };
+}
+
+function RulerOutside({
+    lineLen,
+    scrollerEl,
+    onPickCol,
+    onColW,
+}: {
+    lineLen: number;
+    scrollerEl: HTMLDivElement | null;
+    onPickCol: (col: number) => void;
+    onColW: (w: number) => void;
+}) {
+    const { tens, ones } = useMemo(() => buildRuler(lineLen), [lineLen]);
+    const rulerRef = useRef<HTMLDivElement>(null);
+    const preRef = useRef<HTMLPreElement>(null);
+
+    const onClickRuler = (e: React.MouseEvent<HTMLPreElement>) => {
+        const pre = preRef.current;
+        if (!pre) return;
+
+        const rect = pre.getBoundingClientRect();
+        const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
+        const scrollLeft = rulerRef.current?.scrollLeft ?? 0;
+
+        const x = e.clientX - rect.left - gutter + scrollLeft;
+
+        const contentWidth = pre.scrollWidth - gutter;
+        const colW = contentWidth / lineLen;
+
+        const col = Math.max(1, Math.min(lineLen, Math.floor(x / colW) + 1));
+        onPickCol(col);
+    };
+
+
+
+    useEffect(() => {
+        console.log("RULER lineLen =", lineLen);
+    }, [lineLen]);
+
+
+    useEffect(() => {
+        const pre = preRef.current;
+        if (!pre) return;
+
+        const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
+        const contentWidth = pre.scrollWidth - gutter;
+        const w = contentWidth / lineLen;
+        if (w > 0) onColW(w);
+    }, [lineLen, onColW]);
+
+
+    useEffect(() => {
+        const r = rulerRef.current;
+        const v = scrollerEl;
+        if (!r || !v) return;
+
+        let lock = false;
+
+        const fromViewer = () => {
+            if (lock) return;
+            lock = true;
+            r.scrollLeft = v.scrollLeft;
+            lock = false;
+        };
+
+        const fromRuler = () => {
+            if (lock) return;
+            lock = true;
+            v.scrollLeft = r.scrollLeft;
+            lock = false;
+        };
+
+        v.addEventListener("scroll", fromViewer, { passive: true });
+        r.addEventListener("scroll", fromRuler, { passive: true });
+
+        // alinear al montar
+        r.scrollLeft = v.scrollLeft;
+
+        return () => {
+            v.removeEventListener("scroll", fromViewer);
+            r.removeEventListener("scroll", fromRuler);
+        };
+    }, [scrollerEl]);
+
+    return (
+        <div ref={rulerRef} className="overflow-x-auto overflow-y-hidden bg-white">
+            <pre
+                ref={preRef}
+                className="m-0 font-mono text-[16px] leading-5 text-slate-500 select-none whitespace-pre w-max cursor-crosshair"
+                style={{ paddingLeft: "var(--visor-gutter)" }}
+                onClick={onClickRuler}
+                title="Click para marcar columna"
+            >
+                {tens}{"\n"}{ones}
+            </pre>
+        </div>
+    );
+}
+
 const svgExportIcono = `
   <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 0 24 24" fill="none" stroke="#217346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
     <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -30,6 +138,28 @@ export default function Page() {
     const [currentIndex, setCurrent] = useState(0)
     const [fields, setFields] = useState<Field[]>([])
     const [title, setTitle] = useState<string>('')
+    const [nachamScrollerEl, setNachamScrollerEl] = useState<HTMLDivElement | null>(null);
+
+    const [colMarker, setColMarker] = useState<number | null>(null);
+    const [charW, setCharW] = useState<number>(8); // fallback
+    const wrapperRef = useRef<HTMLDivElement>(null);
+    const [colW, setColW] = useState<number>(8);
+
+    // medir ancho real de 1 char en la fuente mono
+    useEffect(() => {
+        if (!wrapperRef.current) return;
+        const el = document.createElement("span");
+        el.textContent = "0";
+        el.style.position = "absolute";
+        el.style.visibility = "hidden";
+        el.style.fontFamily = "var(--font-mono)";
+        el.style.fontSize = "16px";     // igual que visor/regla
+        el.style.lineHeight = "20px";   // igual que visor/regla
+        wrapperRef.current.appendChild(el);
+        const w = el.getBoundingClientRect().width;
+        wrapperRef.current.removeChild(el);
+        if (w > 0) setCharW(w);
+    }, []);
 
     // Valid/invalid quick state (preflight)
     const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
@@ -68,6 +198,15 @@ export default function Page() {
         errors: string[]
         badIndex: number | null     // primer índice problemático
     }
+
+    useEffect(() => {
+        const onKey = (e: KeyboardEvent) => {
+            if (e.key === "Escape") setColMarker(null);
+        };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+    }, []);
+
 
     function validateNachamStructure(records: string[]): StructureCheck {
         const errs: string[] = []
@@ -772,7 +911,29 @@ export default function Page() {
             <main className="p-2 space-y-6">
                 {records.length > 0 ? (
                     <div id="detail" className="m-2 rounded-xl p-[2px] bg-[linear-gradient(45deg,#C9F5FF_0%,#FFC7D1_48%,#8AB087_100%)] shadow-md">
-                        <div className="rounded-[inherit] bg-white border border-gray-200">
+                        <div
+                            ref={wrapperRef}
+                            className="relative rounded-[inherit] bg-white border border-gray-200 overflow-hidden"
+                            style={{ ["--visor-gutter" as any]: "12px" }}
+                        >
+                            {/* ✅ OVERLAY VA AQUÍ */}
+                            {colMarker !== null && (
+                                <div
+                                    className="pointer-events-none absolute top-0 bottom-0 z-20"
+                                    style={{
+                                        left: `calc(var(--visor-gutter) + ${(colMarker - 1) * colW}px)`,
+                                        width: "1px",
+                                        background: "rgba(2, 6, 23, 0.35)",
+                                    }}
+                                />
+                            )}
+                            <RulerOutside
+                                lineLen={106}
+                                scrollerEl={nachamScrollerEl}
+                                onPickCol={setColMarker}
+                                onColW={setColW}
+                            />
+                            <div className="border-t border-slate-200" />
                             <NachamVisor
                                 records={records}
                                 lineHeight={20}
@@ -784,6 +945,7 @@ export default function Page() {
                                 lineStatus={lineStatus}
                                 lineMarks={lineMarks}
                                 isClickable={isClickable}
+                                onScrollerReady={(el) => setNachamScrollerEl(el)}
                             />
                         </div></div>
                 ) : (

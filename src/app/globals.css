@@ -1,30 +1,23 @@
 @import "tailwindcss";
 
-/* Seteá tu mono “estilo Apple” sin interferir con todo lo demás */
-.font-mono {
-  font-family: var(--font-mono) !important;
-}
-
+/* =========================
+   Variables base (SIEMPRE)
+   ========================= */
 :root {
-  /* variable que luego usa --font-mono */
-  --font-geist-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace;
-}
-
-
-:root {
+  /* Colores */
   --background: #ffffff;
   --foreground: #171717;
+
+  /* Fuentes: define SIEMPRE los tokens finales */
+  /* Work Sans debe existir como --font-work-sans (Next/font o @import), si no cae al fallback */
+  --font-sans: var(--font-work-sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
+
+  /* Mono: tu stack actual (Apple-ish). Si luego cargas JetBrains Mono, lo metes primero */
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+    "Liberation Mono", "Courier New", monospace;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-work-sans);
-  /* ✅ Work Sans */
-  --font-mono: var(--font-geist-mono);
-}
-
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
@@ -32,13 +25,39 @@
   }
 }
 
+/* =========================
+   Tailwind theme tokens
+   ========================= */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  /* ✅ conecta tailwind con tus variables reales */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+}
+
+/* =========================
+   Aplicación global
+   ========================= */
 body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-sans);
-  /* ✅ Aplicar Work Sans */
 }
 
+/* ✅ utilidades explícitas (no hacen daño) */
+.font-mono {
+  font-family: var(--font-mono) !important;
+}
+
+.font-sans {
+  font-family: var(--font-sans) !important;
+}
+
+/* =========================
+   Tu CSS existente
+   ========================= */
 .selected-row {
   background-color: #CBF0C5 !important;
   font-weight: bold;
