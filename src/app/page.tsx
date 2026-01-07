@@ -921,11 +921,10 @@ export default function Page() {
                             {/* ✅ OVERLAY VA AQUÍ */}
                             {colMarker !== null && (
                                 <div
-                                    className="pointer-events-none absolute top-0 bottom-0 z-20"
+                                    className="pointer-events-none absolute top-0 bottom-0 z-20 column-guide"
                                     style={{
                                         left: `calc(var(--visor-gutter) + ${(colMarker - 1) * colW}px)`,
                                         width: "1px",
-                                        background: "rgba(2, 6, 23, 0.35)",
                                     }}
                                 />
                             )}

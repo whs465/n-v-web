@@ -17,7 +17,7 @@
     ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
 
-  /* ✅ Un solo estándar para regla + visor */
+  /* Un solo estándar para regla + visor */
   .visor-mono {
     font-family: var(--font-mono) !important;
     font-size: 15px !important;
@@ -27,6 +27,12 @@
     letter-spacing: 0 !important;
   }
 
+}
+
+/* Línea guía de columna */
+.column-guide {
+  background: rgba(2, 6, 23, 0.4);
+  /* azul */
 }
 
 /* Dark mode */
@@ -44,7 +50,7 @@
   --color-background: var(--background);
   --color-foreground: var(--foreground);
 
-  /* ✅ conecta tailwind con tus variables reales */
+  /* conecta tailwind con tus variables reales */
   --font-sans: var(--font-sans);
   --font-mono: var(--font-mono);
 }
@@ -58,7 +64,7 @@ body {
   font-family: var(--font-sans);
 }
 
-/* ✅ utilidades explícitas (no hacen daño) */
+/* utilidades explícitas (no hacen daño) */
 .font-mono {
   font-family: var(--font-mono) !important;
 }
