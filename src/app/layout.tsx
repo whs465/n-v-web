@@ -1,7 +1,22 @@
 // src/app/layout.tsx
 import './globals.css'
+import { Work_Sans, JetBrains_Mono } from "next/font/google";
 import { ReactNode } from 'react'
 import Script from 'next/script'
+
+const workSans = Work_Sans({
+  subsets: ["latin"],
+  variable: "--font-work-sans",
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
+});
+
+const jetbrainsMono = JetBrains_Mono({
+  subsets: ["latin"],
+  variable: "--font-jetbrains-mono",
+  weight: ["400", "500", "600"],
+  display: "swap",
+});
 
 export const metadata = {
   title: 'Visor NACHAM',
@@ -15,7 +30,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
-    <html lang="es">
+    <html lang="es" className={`${workSans.variable} ${jetbrainsMono.variable}`}>
       <Script
         id="gtm-head"
         strategy="afterInteractive"

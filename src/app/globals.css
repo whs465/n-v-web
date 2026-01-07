@@ -13,8 +13,20 @@
   --font-sans: var(--font-work-sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
 
   /* Mono: tu stack actual (Apple-ish). Si luego cargas JetBrains Mono, lo metes primero */
-  --font-mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+  --font-mono: var(--font-jetbrains-mono),
+    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
     "Liberation Mono", "Courier New", monospace;
+
+  /* ✅ Un solo estándar para regla + visor */
+  .visor-mono {
+    font-family: var(--font-mono) !important;
+    font-size: 15px !important;
+    /* 👈 bajalo acá */
+    line-height: 20px !important;
+    /* 👈 tu lineHeight */
+    letter-spacing: 0 !important;
+  }
+
 }
 
 /* Dark mode */

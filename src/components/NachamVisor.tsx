@@ -155,9 +155,10 @@ export default function NachamVisor({
         return (
             <div
                 style={style}
-                className={`flex w-max font-mono whitespace-pre
-      ${canOpen ? 'cursor-pointer hover:bg-[rgb(228,242,251)]' : 'cursor-not-allowed opacity-80'}
-      ${rowBg}`}
+                className={`flex w-max visor-mono whitespace-pre overflow-hidden
+  ${canOpen ? 'cursor-pointer hover:bg-[rgb(228,242,251)]' : 'cursor-not-allowed opacity-80'}
+  ${rowBg}`}
+
                 onClick={() => canOpen && onRowClick(index)}
                 onDoubleClick={() => canOpen && onRowClick(index)} // si tu modal es doble click, poné tu handler acá
                 title={rowTitle}

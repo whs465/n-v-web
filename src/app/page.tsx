@@ -52,10 +52,19 @@ function RulerOutside({
         const pre = preRef.current;
         if (!pre) return;
 
-        const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
-        const contentWidth = pre.scrollWidth - gutter;
-        const w = contentWidth / lineLen;
-        if (w > 0) onColW(w);
+        const measure = () => {
+            const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
+            const contentWidth = pre.scrollWidth - gutter;
+            const w = contentWidth / lineLen;
+            if (w > 0) onColW(w);
+        };
+
+        const id1 = requestAnimationFrame(() => {
+            const id2 = requestAnimationFrame(measure);
+            return () => cancelAnimationFrame(id2);
+        });
+
+        return () => cancelAnimationFrame(id1);
     }, [lineLen, onColW]);
 
 
@@ -96,7 +105,7 @@ function RulerOutside({
         <div ref={rulerRef} className="overflow-x-auto overflow-y-hidden bg-white">
             <pre
                 ref={preRef}
-                className="m-0 font-mono text-[16px] leading-5 text-slate-500 select-none whitespace-pre w-max cursor-crosshair"
+                className="m-0 visor-mono text-slate-500 select-none whitespace-pre w-max cursor-crosshair"
                 style={{ paddingLeft: "var(--visor-gutter)" }}
                 onClick={onClickRuler}
                 title="Click para marcar columna"
