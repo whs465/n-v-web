@@ -48,13 +48,6 @@ function RulerOutside({
         onPickCol(col);
     };
 
-
-
-    useEffect(() => {
-        console.log("RULER lineLen =", lineLen);
-    }, [lineLen]);
-
-
     useEffect(() => {
         const pre = preRef.current;
         if (!pre) return;
