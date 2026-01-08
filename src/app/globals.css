@@ -43,6 +43,25 @@
   }
 }
 
+.thin-scroll {
+  scrollbar-width: thin;
+  /* Firefox */
+}
+
+.thin-scroll::-webkit-scrollbar {
+  width: 10px;
+  /* Chrome / Edge */
+}
+
+.thin-scroll::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, .35);
+  border-radius: 6px;
+}
+
+.thin-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
 /* =========================
    Tailwind theme tokens
    ========================= */

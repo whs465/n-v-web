@@ -34,12 +34,14 @@ export default function NachamVisor({
 
     // Set para lookup O(1)
     const badRowSet = useMemo(() => new Set(badRows), [badRows])
-    const outerRef = useRef<HTMLDivElement>(null)
+    const outerRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        if (outerRef.current && onScrollerReady) onScrollerReady(outerRef.current)
-    }, [onScrollerReady])
-
+        if (outerRef.current) {
+            outerRef.current.classList.add("thin-scroll");
+            onScrollerReady?.(outerRef.current);
+        }
+    }, []);
 
     useEffect(() => {
         listRef.current?.scrollToItem(0, 'start')
