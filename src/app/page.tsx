@@ -762,6 +762,22 @@ export default function Page() {
     const showNext = () => currentIndex < records.length - 1 && handleRowClick(currentIndex + 1)
 
     // === Export Excel (6 + adenda 7 al lado) ===
+    const formatTransactionValue = (value: string) => {
+        if (value == null) return '0,00'
+
+        let digits = String(value).replace(/\D/g, '') // solo dígitos
+        digits = digits.replace(/^0+/, '')            // quita ceros a la izquierda
+
+        if (!digits) return '0,00'
+
+        if (digits.length === 1) digits = '0' + digits
+
+        const integerPart = digits.length > 2 ? digits.slice(0, -2) : '0'
+        const decimalPart = digits.slice(-2)
+
+        return `${integerPart},${decimalPart}`
+    }
+
     const exportExcel = () => {
         if (!records.length) return
         if (!canExport) {
@@ -791,15 +807,32 @@ export default function Page() {
 
         const data = type6Indices.map((idx6, i) => {
             const row: Record<string, string | number> = { Registro: i + 1 }
-            parseFields(records[idx6], idx6).filter(f => f.name !== 'Tipo de registro')
-                .forEach(f => { row[f.name] = f.value.replace(/ /g, '·') })
+
+            parseFields(records[idx6], idx6)
+                .filter(f => f.name !== 'Tipo de registro')
+                .forEach(f => {
+                    const raw = String(f.value ?? '') // sin meter ·
+                    row[f.name] =
+                        (f.name === 'Valor de la Transacción' || f.name === 'Valor de la Transaccion')
+                            ? formatTransactionValue(raw)
+                            : raw
+                })
+
             const idx7 = idx6 + 1
             if (records[idx7]?.charAt(0) === '7') {
-                parseFields(records[idx7], idx7).filter(f => f.name !== 'Tipo de registro')
-                    .forEach(f => { row[f.name] = f.value.replace(/ /g, '·') })
+                parseFields(records[idx7], idx7)
+                    .filter(f => f.name !== 'Tipo de registro')
+                    .forEach(f => {
+                        const raw = String(f.value ?? '') // sin meter ·
+                        row[f.name] =
+                            (f.name === 'Valor de la Transacción' || f.name === 'Valor de la Transaccion')
+                                ? formatTransactionValue(raw)
+                                : raw
+                    })
             } else {
                 fields7.forEach(f => { row[f.name] = '' })
             }
+
             return row
         })
 
