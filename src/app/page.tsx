@@ -642,11 +642,10 @@ export default function Page() {
                     { id: 6, name: "Valor factura", length: 18, position: "52-69", value: rec.slice(51, 69) },
                     { id: 7, name: "Reservado", length: 14, position: "70-83", value: rec.slice(69, 83) },
                     { id: 8, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
-                    { id: 9, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
+                    { id: 9, name: "Numero de secuencia de registro de detalle", length: 7, position: "88-94", value: rec.slice(87, 94) },
                     { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
                 ]
             } else if (p320321 === '05' && ts === 'PPD' && descr === 'PAGOS') {
-                console.log('Adenda PPD detectada')
                 flds = [
                     { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
                     { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
