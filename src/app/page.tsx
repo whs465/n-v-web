@@ -5,6 +5,7 @@ import NachamVisor from '@/components/NachamVisor'
 import NachamModal, { Field } from '@/components/NachamModal'
 import * as XLSX from 'xlsx'
 import { useNachamValidator } from '@/hooks/useNachamValidator'
+import { log } from 'console'
 
 function buildRuler(length: number) {
     let tens = "";
@@ -612,9 +613,11 @@ export default function Page() {
         } else if (type === '7') {
             const pi = findParentRecord(idx, '5')
             let ts = ''
+            let descr = ''
             if (pi !== null) {
                 const pr = records[pi]
                 ts = pr.slice(50, 53).trim()
+                descr = pr.slice(53, 63).trim()
             }
             const p320321 = rec.slice(1, 3)
             if (p320321 === '99') {
@@ -642,17 +645,21 @@ export default function Page() {
                     { id: 9, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
                     { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
                 ]
-            } else if (p320321 === '05' && ts === 'PPD') {
+            } else if (p320321 === '05' && ts === 'PPD' && descr === 'PAGOS') {
+                console.log('Adenda PPD detectada')
                 flds = [
                     { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
                     { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                    { id: 3, name: "Identificación del Originador", length: 13, position: "4-16", value: rec.slice(3, 16) },
-                    { id: 4, name: "Identificación del Originador", length: 30, position: "17-46", value: rec.slice(16, 46) },
-                    { id: 5, name: "Descripción del servicio", length: 15, position: "47-61", value: rec.slice(46, 61) },
-                    { id: 6, name: "Reservado", length: 22, position: "62-83", value: rec.slice(61, 83) },
-                    { id: 7, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
-                    { id: 8, name: "Numero de secuencia de transacción del registro de detalle de transacciones", length: 7, position: "88-94", value: rec.slice(87, 94) },
-                    { id: 9, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
+                    { id: 3, name: "Identificación del Originador", length: 15, position: "4-18", value: rec.slice(3, 18) },
+                    { id: 4, name: "Reservado", length: 2, position: "19-20", value: rec.slice(18, 20) },
+                    { id: 5, name: "Propósito de la transacción", length: 10, position: "21-30", value: rec.slice(20, 30) },
+                    { id: 6, name: "Numero de factura o cuenta", length: 24, position: "31-54", value: rec.slice(30, 54) },
+                    { id: 7, name: "Reservado", length: 2, position: "55-56", value: rec.slice(54, 56) },
+                    { id: 8, name: "Información libre del Originador", length: 24, position: "57-80", value: rec.slice(56, 80) },
+                    { id: 9, name: "Reservado", length: 3, position: "81-83", value: rec.slice(80, 83) },
+                    { id: 10, name: "Numero de secuencia de registro adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
+                    { id: 11, name: "Numero de secuencia de registro detalle", length: 7, position: "88-94", value: rec.slice(87, 94) },
+                    { id: 12, name: "Reservado", length: 12, position: "95-106", value: rec.slice(95, 106) },
                 ]
             } else {
                 flds = [
