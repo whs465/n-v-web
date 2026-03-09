@@ -804,10 +804,10 @@ export default function Page() {
         <>
             {/* Header */}
             <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
-                <div className="w-full flex items-center justify-between py-2 px-2">
+                <div className="mx-auto w-full max-w-[1396px] px-2 py-2 grid grid-cols-[290px_minmax(0,1fr)] gap-3 items-center">
                     <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">Visor de archivos NACHAM</h1>
 
-                    <div className="flex items-center space-x-4">
+                    <div className="flex items-center justify-end space-x-4 min-w-0">
                         {fileName && (
                             <div className="flex items-center text-gray-700 text-sm min-w-0">
                                 <span className="max-w-[42vw] break-all">{fileName}</span>
@@ -921,7 +921,8 @@ export default function Page() {
             {/* Main */}
             <main className="p-2 space-y-6 overflow-x-auto">
                 {records.length > 0 ? (
-                    <div className="m-2 min-w-[1100px] grid grid-cols-[290px_minmax(0,1fr)] gap-3">
+                    <div className="w-full overflow-x-auto">
+                    <div className="m-2 mx-auto w-max min-w-[1100px] grid grid-cols-[290px_1080px] gap-3">
                         <aside className="rounded-xl border border-slate-200 bg-white p-3 h-[80vh] flex flex-col">
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-lg border border-slate-200 p-2">
@@ -1109,8 +1110,9 @@ export default function Page() {
                         </div>
                         </div>
                     </div>
+                    </div>
                 ) : (
-                    <p className="text-gray-600">Asegúrese de cargar un NACHAM en formato válido.</p>
+                    <></>
                 )}
 
                 <NachamModal
