@@ -114,8 +114,25 @@ export default function Page() {
     }, [rulerEnabled])
 
     const getMonoCharWidth = useCallback(() => {
-        return 9
-    }, [])
+        const scroller = nachamScrollerEl
+        if (!scroller) return 9
+        const row = scroller.querySelector('.visor-mono') as HTMLDivElement | null
+        if (!row) return 9
+        const style = window.getComputedStyle(row)
+        const canvas = document.createElement('canvas')
+        const ctx = canvas.getContext('2d')
+        if (!ctx) return 9
+        const fontStyle = style.fontStyle || 'normal'
+        const fontVariant = style.fontVariant || 'normal'
+        const fontWeight = style.fontWeight || '400'
+        const fontSize = style.fontSize || '15px'
+        const fontFamily = style.fontFamily || 'monospace'
+        ctx.font = `${fontStyle} ${fontVariant} ${fontWeight} ${fontSize} ${fontFamily}`
+        const probe = '0'.repeat(106)
+        const measured = ctx.measureText(probe).width
+        const cw = measured / 106
+        return Number.isFinite(cw) && cw > 0 ? cw : 9
+    }, [nachamScrollerEl])
 
     // === Helpers toast ===
 

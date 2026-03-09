@@ -135,14 +135,14 @@ export default function NachamVisor({
             // (incluidos errores consecutivos). No afecta a segmentos sin marca.
             let sep = ''
             if (isSearchActive || isSearch) sep = ''
-            else if (t === 'error') sep = 'border-r border-rose-500/60'
-            else if (t === 'ok') sep = 'border-r border-green-600/40'
-            else if (t === 'info') sep = 'border-r border-sky-600/30'
-            else if (tipOwner) sep = 'border-r border-slate-300/70'
+            else if (t === 'error') sep = 'shadow-[inset_-1px_0_0_rgba(244,63,94,0.65)]'
+            else if (t === 'ok') sep = 'shadow-[inset_-1px_0_0_rgba(22,163,74,0.45)]'
+            else if (t === 'info') sep = 'shadow-[inset_-1px_0_0_rgba(14,165,233,0.35)]'
+            else if (tipOwner) sep = 'shadow-[inset_-1px_0_0_rgba(148,163,184,0.65)]'
             // Si no hay marca (t undefined), dejamos sin borde.
 
             chunks.push(
-                <span key={`${s}-${e}`} className={`${bg} ${sep} ${tipOwner ? 'border-y border-slate-300/40 rounded-[2px]' : ''}`} title={title}>
+                <span key={`${s}-${e}`} className={`${bg} ${sep} ${tipOwner ? 'rounded-[2px] shadow-[inset_0_1px_0_rgba(148,163,184,0.45),inset_0_-1px_0_rgba(148,163,184,0.45)]' : ''}`} title={title}>
                     {segment.replace(/ /g, '·')}
                 </span>
             )
