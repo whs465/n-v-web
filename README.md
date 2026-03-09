@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# NACHAM WebViewer v2
 
-## Getting Started
+Nuevo proyecto web en Next.js + TypeScript para portar la funcionalidad de `NACHAMEXT` sin tocar la extension.
 
-First, run the development server:
+## Estado actual
+
+- Base visual clonada desde `webviewer` para conservar tema/UI.
+- Se creo un core en `src/core/nacham` con:
+  - `fieldMaps.ts`: FIELD_MAP dinamico por perfil.
+  - `profile.ts`: deteccion de perfil (`PPD PRENOTIFIC`, `PPD PAGOS`, `PPD DEVOLUCION`, `PPD TRASLADOS`, `CTX PAGOS`).
+  - `parser.ts`: parse de registros y extraccion de campos.
+  - `tree.ts`: estructura de lotes/totales base.
+- `src/app/page.tsx` ya consume ese core para abrir modal con campos dinamicos por perfil.
+
+## Ejecutar local
 
 ```bash
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Abrir [http://localhost:3000](http://localhost:3000).
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Siguiente fase
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Portar validaciones avanzadas de `extension.js` al worker web.
+- Portar exportadores `CSV`, `JSON` y `SQL` con la misma salida de la extension.
+- Portar flujo completo de busqueda/edicion (estado, highlights, guardado de copia).

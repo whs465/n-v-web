@@ -71,9 +71,9 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           <div className="absolute inset-0 bg-gradient-to-br from-white via-white/0 to-white dark:from-gray-950 dark:via-gray-950/0 dark:to-gray-950" />
         </div>
 
-        <div className="w-full max-w-[1070px] mx-auto min-h-screen flex flex-col relative z-0">
+        <div className="w-full max-w-none min-h-screen flex flex-col relative z-0">
           {/* Contenido principal */}
-          <main className="flex-grow pt-2 px-6 pb-8">
+          <main className="flex-grow pt-2 px-3 pb-8">
             {children}
           </main>
           {/* Footer con latido */}

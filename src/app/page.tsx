@@ -5,117 +5,14 @@ import NachamVisor from '@/components/NachamVisor'
 import NachamModal, { Field } from '@/components/NachamModal'
 import * as XLSX from 'xlsx'
 import { useNachamValidator } from '@/hooks/useNachamValidator'
-import { log } from 'console'
-
-function buildRuler(length: number) {
-    let tens = "";
-    let ones = "";
-    for (let i = 1; i <= length; i++) {
-        tens += i % 10 === 0 ? String((i / 10) % 10) : "·";
-        ones += String(i % 10);
-    }
-    return { tens, ones };
-}
-
-function RulerOutside({
-    lineLen,
-    scrollerEl,
-    onPickCol,
-    onColW,
-}: {
-    lineLen: number;
-    scrollerEl: HTMLDivElement | null;
-    onPickCol: (col: number) => void;
-    onColW: (w: number) => void;
-}) {
-    const { tens, ones } = useMemo(() => buildRuler(lineLen), [lineLen]);
-    const rulerRef = useRef<HTMLDivElement>(null);
-    const preRef = useRef<HTMLPreElement>(null);
-
-    const onClickRuler = (e: React.MouseEvent<HTMLPreElement>) => {
-        const pre = preRef.current;
-        if (!pre) return;
-
-        const rect = pre.getBoundingClientRect();
-        const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
-        const scrollLeft = rulerRef.current?.scrollLeft ?? 0;
-
-        const x = e.clientX - rect.left - gutter + scrollLeft;
-
-        const contentWidth = pre.scrollWidth - gutter;
-        const colW = contentWidth / lineLen;
-
-        const col = Math.max(1, Math.min(lineLen, Math.floor(x / colW) + 1));
-        onPickCol(col);
-    };
-
-    useEffect(() => {
-        const pre = preRef.current;
-        if (!pre) return;
-
-        const measure = () => {
-            const gutter = parseFloat(getComputedStyle(pre).paddingLeft) || 0;
-            const contentWidth = pre.scrollWidth - gutter;
-            const w = contentWidth / lineLen;
-            if (w > 0) onColW(w);
-        };
-
-        const id1 = requestAnimationFrame(() => {
-            const id2 = requestAnimationFrame(measure);
-            return () => cancelAnimationFrame(id2);
-        });
-
-        return () => cancelAnimationFrame(id1);
-    }, [lineLen, onColW]);
-
-
-    useEffect(() => {
-        const r = rulerRef.current;
-        const v = scrollerEl;
-        if (!r || !v) return;
-
-        let lock = false;
-
-        const fromViewer = () => {
-            if (lock) return;
-            lock = true;
-            r.scrollLeft = v.scrollLeft;
-            lock = false;
-        };
-
-        const fromRuler = () => {
-            if (lock) return;
-            lock = true;
-            v.scrollLeft = r.scrollLeft;
-            lock = false;
-        };
-
-        v.addEventListener("scroll", fromViewer, { passive: true });
-        r.addEventListener("scroll", fromRuler, { passive: true });
-
-        // alinear al montar
-        r.scrollLeft = v.scrollLeft;
-
-        return () => {
-            v.removeEventListener("scroll", fromViewer);
-            r.removeEventListener("scroll", fromRuler);
-        };
-    }, [scrollerEl]);
-
-    return (
-        <div ref={rulerRef} className="overflow-x-auto overflow-y-hidden bg-white">
-            <pre
-                ref={preRef}
-                className="m-0 visor-mono text-slate-500 select-none whitespace-pre w-max cursor-crosshair"
-                style={{ paddingLeft: "var(--visor-gutter)" }}
-                onClick={onClickRuler}
-                title="Click para marcar columna"
-            >
-                {tens}{"\n"}{ones}
-            </pre>
-        </div>
-    );
-}
+import {
+    buildTree,
+    detectFileProfile,
+    extractFields,
+    parseRowsToRecords,
+    type FieldMap,
+    type FileProfile,
+} from '@/core/nacham'
 
 const svgExportIcono = `
   <svg xmlns="http://www.w3.org/2000/svg" height="20" width="20" viewBox="0 0 24 24" fill="none" stroke="#217346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -123,6 +20,24 @@ const svgExportIcono = `
     <polyline points="7 10 12 15 17 10"/>
     <line x1="12" y1="15" x2="12" y2="3"/>
   </svg>`
+
+function formatMoneyFromRaw(raw: string) {
+    const value = String(raw || '').trim()
+    if (!value) return '0,00'
+    const digits = value.replace(/\D/g, '')
+    if (!digits) return '0,00'
+    const normalized = (digits.replace(/^0+/, '') || '0').padStart(3, '0')
+    const cents = normalized.slice(-2)
+    const integer = normalized.slice(0, -2).replace(/^0+/, '') || '0'
+    const integerFormatted = integer.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+    return `${integerFormatted},${cents}`
+}
+
+function hasNonZeroAmount(raw: string) {
+    return /[1-9]/.test(String(raw || '').replace(/\D/g, ''))
+}
+
+type SearchHit = { line: number; start: number; end: number }
 
 export default function Page() {
     const {
@@ -137,35 +52,31 @@ export default function Page() {
 
     const [fileName, setFileName] = useState<string>('')
     const [records, setRecords] = useState<string[]>([])
+    const parsedRecords = useMemo(() => parseRowsToRecords(records), [records])
+    const detectedProfile = useMemo(() => detectFileProfile(parsedRecords), [parsedRecords])
+    const activeProfile: FileProfile = detectedProfile.profile
+    const activeFieldMap: FieldMap = detectedProfile.fieldMap
+    const treeSummary = useMemo(() => buildTree(parsedRecords), [parsedRecords])
     const [isOpen, setIsOpen] = useState(false)
     const [currentIndex, setCurrent] = useState(0)
+    const [focusedIndex, setFocusedIndex] = useState<number | undefined>(undefined)
     const [fields, setFields] = useState<Field[]>([])
     const [title, setTitle] = useState<string>('')
-    const [nachamScrollerEl, setNachamScrollerEl] = useState<HTMLDivElement | null>(null);
-
-    const [colMarker, setColMarker] = useState<number | null>(null);
-    const [charW, setCharW] = useState<number>(8); // fallback
-    const wrapperRef = useRef<HTMLDivElement>(null);
-    const [colW, setColW] = useState<number>(8);
-
-    // medir ancho real de 1 char en la fuente mono
-    useEffect(() => {
-        if (!wrapperRef.current) return;
-        const el = document.createElement("span");
-        el.textContent = "0";
-        el.style.position = "absolute";
-        el.style.visibility = "hidden";
-        el.style.fontFamily = "var(--font-mono)";
-        el.style.fontSize = "16px";     // igual que visor/regla
-        el.style.lineHeight = "20px";   // igual que visor/regla
-        wrapperRef.current.appendChild(el);
-        const w = el.getBoundingClientRect().width;
-        wrapperRef.current.removeChild(el);
-        if (w > 0) setCharW(w);
-    }, []);
+    const [nachamScrollerEl, setNachamScrollerEl] = useState<HTMLDivElement | null>(null)
+    const [hoverCol, setHoverCol] = useState<number | null>(null)
+    const [rulerLeft, setRulerLeft] = useState<number>(0)
+    const [rulerVisible, setRulerVisible] = useState(false)
+    const [rulerEnabled, setRulerEnabled] = useState(false)
+    const [searchOpen, setSearchOpen] = useState(false)
+    const [searchTerm, setSearchTerm] = useState('')
+    const [searchHits, setSearchHits] = useState<SearchHit[]>([])
+    const [searchActive, setSearchActive] = useState(-1)
+    const searchInputRef = useRef<HTMLInputElement | null>(null)
+    const fileInputRef = useRef<HTMLInputElement | null>(null)
 
     // Valid/invalid quick state (preflight)
     const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
+    const [hasUserValidated, setHasUserValidated] = useState(false)
 
     // Sombras de guía en visor
     const [badFromIndex, setBadFromIndex] = useState<number | null>(null)
@@ -180,6 +91,30 @@ export default function Page() {
         if (typeof window !== 'undefined') {
             setListHeight(Math.floor(window.innerHeight * 0.8))
         }
+    }, [])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        try {
+            setRulerEnabled(window.localStorage.getItem('nacham.web.ruler.enabled') === '1')
+        } catch {
+            setRulerEnabled(false)
+        }
+    }, [])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        try {
+            window.localStorage.setItem('nacham.web.ruler.enabled', rulerEnabled ? '1' : '0')
+        } catch { }
+        if (!rulerEnabled) {
+            setRulerVisible(false)
+            setHoverCol(null)
+        }
+    }, [rulerEnabled])
+
+    const getMonoCharWidth = useCallback(() => {
+        return 9
     }, [])
 
     // === Helpers toast ===
@@ -201,15 +136,6 @@ export default function Page() {
         errors: string[]
         badIndex: number | null     // primer índice problemático
     }
-
-    useEffect(() => {
-        const onKey = (e: KeyboardEvent) => {
-            if (e.key === "Escape") setColMarker(null);
-        };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-    }, []);
-
 
     function validateNachamStructure(records: string[]): StructureCheck {
         const errs: string[] = []
@@ -366,6 +292,10 @@ export default function Page() {
         () => records.findIndex(r => r?.[0] === '9'),
         [records]
     )
+    const searchEndIdx = useMemo(
+        () => (firstNineIdx >= 0 ? firstNineIdx : Math.max(0, records.length - 1)),
+        [firstNineIdx, records.length]
+    )
 
     const isClickable = useCallback((idx: number) => {
         const t = records[idx]?.[0]
@@ -400,10 +330,12 @@ export default function Page() {
     // === Reset duro antes de cargar otro archivo ===
     const hardResetUI = () => {
         setIsOpen(false)
+        setFocusedIndex(undefined)
         setBadFromIndex(null)
         setBadRowSet(new Set())
         setRecords([])
         setIsNachamValid(null)
+        setHasUserValidated(false)
         resetValidator()
     }
 
@@ -418,7 +350,22 @@ export default function Page() {
             'errLineas=', lineMarks?.flat().filter(m => m.type === 'error'))
     }, [isValidating, lineStatus, globalErrors, records.length, lineMarks])
 
-    // === Cargar archivo + preflight + lanzar worker ===
+    const runManualValidation = useCallback(() => {
+        if (!records.length || isNachamValid !== true || isDevolucion) return
+        const compact = records.join('')
+        setHasUserValidated(true)
+        resetValidator?.()
+        validateText(compact, {
+            checkTransCount: true,
+            checkCreditos: true,
+            checkDebitos: true,
+            checkTotalesControl: true,
+            includeAdendasInTrans: true,
+            serialFromName: extractSerialFromName(fileName),
+        })
+    }, [records, isNachamValid, isDevolucion, resetValidator, validateText, fileName])
+
+    // === Cargar archivo + preflight ===
     const handleFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
         const input = e.currentTarget
         if (!input.files?.length) return
@@ -438,6 +385,8 @@ export default function Page() {
             setFileName(file.name)
             input.value = ''
             setRecords(recs)
+            setFocusedIndex(0)
+            setHasUserValidated(false)
 
             const msgs: string[] = []
 
@@ -504,21 +453,6 @@ export default function Page() {
                 setBadFromIndex(null)
                 // limpiar cualquier resultado previo del worker
                 resetValidator?.()
-
-                // opcional: avisar con toast “info”
-                //showErrors?.(['Archivo de devolución detectado — se omite validación. Puede exportar.'], 6000)
-
-            } else {
-                // Lanza validación pesada
-                //console.log('[ui] validateText len=', compact.length)
-                validateText(compact, {
-                    checkTransCount: true,
-                    checkCreditos: true,
-                    checkDebitos: true,
-                    checkTotalesControl: true,
-                    includeAdendasInTrans: true,
-                    serialFromName: extractSerialFromName(file.name),
-                })
             }
             if (msgs.length) showErrors(msgs, 10000)
         } catch (err) {
@@ -557,153 +491,13 @@ export default function Page() {
         return t === '1' || t === '5' || t === '6' || t === '7' || t === '8'
     }, [records, firstNineIndex])
 
-    // 4) Parsear campos para la modal (usa lo que necesites en deps)
-    const parseFields = useCallback((rec: string, idx: number) => {
+    // 4) Parsear campos para la modal usando field map dinámico por perfil
+    const parseFields = useCallback((rec: string) => {
         const type = rec.charAt(0)
-        let flds: Field[] = []
-        if (type === '1') {
-            flds = [
-                { id: 1, name: "Tipo de Registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                { id: 2, name: "Código de Prioridad", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                { id: 3, name: "Código Participante Destino Inmediato", length: 10, position: "4-13", value: rec.slice(3, 13) },
-                { id: 4, name: "Código Participante Origen Inmediato", length: 10, position: "14-23", value: rec.slice(13, 23) },
-                { id: 5, name: "Fecha de Creación del Archivo", length: 8, position: "24-31", value: rec.slice(23, 31) },
-                { id: 6, name: "Hora de Creación del Archivo", length: 4, position: "32-35", value: rec.slice(31, 35) },
-                { id: 7, name: "Identificador del Archivo", length: 1, position: "36-36", value: rec.slice(35, 36) },
-                { id: 8, name: "Tamaño del Registro", length: 3, position: "37-39", value: rec.slice(36, 39) },
-                { id: 9, name: "Factor de Ablocamiento", length: 2, position: "40-41", value: rec.slice(39, 41) },
-                { id: 10, name: "Código de Formato", length: 1, position: "42-42", value: rec.slice(41, 42) },
-                { id: 11, name: "Nombre Entidad Destino", length: 23, position: "43-65", value: rec.slice(42, 65) },
-                { id: 12, name: "Nombre Entidad Origen", length: 23, position: "66-88", value: rec.slice(65, 88) },
-                { id: 13, name: "Código de Referencia", length: 8, position: "89-96", value: rec.slice(88, 96) },
-                { id: 14, name: "Reservado", length: 10, position: "97-106", value: rec.slice(96, 106) },
-            ]
-        } else if (type === '5') {
-            flds = [
-                { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                { id: 2, name: "Código clase de transacción por lote", length: 3, position: "2-4", value: rec.slice(1, 4) },
-                { id: 3, name: "Nombre del originador", length: 16, position: "5-20", value: rec.slice(4, 20) },
-                { id: 4, name: "Datos Discrecionales del originador", length: 20, position: "21-40", value: rec.slice(20, 40) },
-                { id: 5, name: "Identificador del originador", length: 10, position: "41-50", value: rec.slice(40, 50) },
-                { id: 6, name: "Tipo de Servicio", length: 3, position: "51-53", value: rec.slice(50, 53) },
-                { id: 7, name: "Descripción del Lote", length: 10, position: "54-63", value: rec.slice(53, 63) },
-                { id: 8, name: "Fecha Descriptiva", length: 8, position: "64-71", value: rec.slice(63, 71) },
-                { id: 9, name: "Fecha Efectiva de la Transacción", length: 8, position: "72-79", value: rec.slice(71, 79) },
-                { id: 10, name: "Fecha de Compensación Juliana", length: 3, position: "80-82", value: rec.slice(79, 82) },
-                { id: 11, name: "Código estado del Originador", length: 1, position: "83-83", value: rec.slice(82, 83) },
-                { id: 12, name: "Código Participante Originador", length: 8, position: "84-91", value: rec.slice(83, 91) },
-                { id: 13, name: "Número de Lote", length: 7, position: "92-98", value: rec.slice(91, 98) },
-                { id: 14, name: "Reservado", length: 8, position: "99-106", value: rec.slice(98, 106) },
-            ]
-        } else if (type === '6') {
-            flds = [
-                { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                { id: 2, name: "Código clase de transacción por lote", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                { id: 3, name: "Código participante receptor", length: 8, position: "4-11", value: rec.slice(3, 11) },
-                { id: 4, name: "Dígito de chequeo", length: 1, position: "12-12", value: rec.slice(11, 12) },
-                { id: 5, name: "Número de Cuenta del Receptor", length: 17, position: "13-29", value: rec.slice(12, 29) },
-                { id: 6, name: "Valor de la Transacción", length: 18, position: "30-47", value: rec.slice(29, 47) },
-                { id: 7, name: "Número de Identificación del Receptor", length: 15, position: "48-62", value: rec.slice(47, 62) },
-                { id: 8, name: "Nombre del Receptor", length: 22, position: "63-84", value: rec.slice(62, 84) },
-                { id: 9, name: "Datos Discrecionales", length: 2, position: "85-86", value: rec.slice(84, 86) },
-                { id: 10, name: "Indicador de Registro de Adenda", length: 1, position: "87-87", value: rec.slice(86, 87) },
-                { id: 11, name: "Número de Secuencia", length: 15, position: "88-102", value: rec.slice(87, 102) },
-                { id: 12, name: "Reservado", length: 4, position: "103-106", value: rec.slice(102, 106) },
-            ]
-        } else if (type === '7') {
-            const pi = findParentRecord(idx, '5')
-            let ts = ''
-            let descr = ''
-            if (pi !== null) {
-                const pr = records[pi]
-                ts = pr.slice(50, 53).trim()
-                descr = pr.slice(53, 63).trim()
-            }
-            const p320321 = rec.slice(1, 3)
-            if (p320321 === '99') {
-                flds = [
-                    { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                    { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                    { id: 3, name: "Causal de Devolución", length: 3, position: "4-6", value: rec.slice(3, 6) },
-                    { id: 4, name: "Número de Secuencia de la Transacción Original", length: 15, position: "7-21", value: rec.slice(6, 21) },
-                    { id: 5, name: "Fecha de Muerte", length: 8, position: "22-29", value: rec.slice(21, 29) },
-                    { id: 6, name: "Código del Participante Receptor de la Transacción Original", length: 8, position: "30-37", value: rec.slice(29, 37) },
-                    { id: 7, name: "Información Adicional", length: 44, position: "38-81", value: rec.slice(37, 81) },
-                    { id: 8, name: "Número de Secuencia del Registro Adenda", length: 15, position: "82-96", value: rec.slice(81, 96) },
-                    { id: 9, name: "Reservado", length: 10, position: "97-106", value: rec.slice(96, 106) },
-                ]
-            } else if (p320321 === '05' && ts === 'CTX') {
-                flds = [
-                    { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                    { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                    { id: 3, name: "Código EAN 13 o NIT", length: 13, position: "4-16", value: rec.slice(3, 16) },
-                    { id: 4, name: "Descripción del servicio", length: 15, position: "17-31", value: rec.slice(16, 31) },
-                    { id: 5, name: "Número de referencia de factura", length: 20, position: "32-51", value: rec.slice(31, 51) },
-                    { id: 6, name: "Valor factura", length: 18, position: "52-69", value: rec.slice(51, 69) },
-                    { id: 7, name: "Reservado", length: 14, position: "70-83", value: rec.slice(69, 83) },
-                    { id: 8, name: "Número de Secuencia del Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
-                    { id: 9, name: "Numero de secuencia de registro de detalle", length: 7, position: "88-94", value: rec.slice(87, 94) },
-                    { id: 10, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
-                ]
-            } else if (p320321 === '05' && ts === 'PPD' && descr === 'PAGOS') {
-                flds = [
-                    { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                    { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                    { id: 3, name: "Identificación del Originador", length: 15, position: "4-18", value: rec.slice(3, 18) },
-                    { id: 4, name: "Reservado", length: 2, position: "19-20", value: rec.slice(18, 20) },
-                    { id: 5, name: "Propósito de la transacción", length: 10, position: "21-30", value: rec.slice(20, 30) },
-                    { id: 6, name: "Numero de factura o cuenta", length: 24, position: "31-54", value: rec.slice(30, 54) },
-                    { id: 7, name: "Reservado", length: 2, position: "55-56", value: rec.slice(54, 56) },
-                    { id: 8, name: "Información libre del Originador", length: 24, position: "57-80", value: rec.slice(56, 80) },
-                    { id: 9, name: "Reservado", length: 3, position: "81-83", value: rec.slice(80, 83) },
-                    { id: 10, name: "Numero de secuencia de registro adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
-                    { id: 11, name: "Numero de secuencia de registro detalle", length: 7, position: "88-94", value: rec.slice(87, 94) },
-                    { id: 12, name: "Reservado", length: 12, position: "95-106", value: rec.slice(95, 106) },
-                ]
-            } else {
-                flds = [
-                    { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                    { id: 2, name: "Código Tipo de Registro Adenda", length: 2, position: "2-3", value: rec.slice(1, 3) },
-                    { id: 3, name: "Identificación del Originador", length: 15, position: "4-18", value: rec.slice(3, 18) },
-                    { id: 4, name: "Reservado", length: 1, position: "19-19", value: rec.slice(18, 19) },
-                    { id: 5, name: "Proposito de la Transacción", length: 10, position: "21-30", value: rec.slice(20, 30) },
-                    { id: 6, name: "Número de Factura/Cuenta", length: 24, position: "31-54", value: rec.slice(30, 54) },
-                    { id: 7, name: "Reservado", length: 2, position: "55-56", value: rec.slice(54, 56) },
-                    { id: 8, name: "Información Libre Originador", length: 24, position: "57-80", value: rec.slice(56, 80) },
-                    { id: 9, name: "Reservado", length: 2, position: "81-83", value: rec.slice(80, 83) },
-                    { id: 10, name: "Número de secuencia de Registro Adenda", length: 4, position: "84-87", value: rec.slice(83, 87) },
-                    { id: 11, name: "Número de secuencia de Transacción del Registro de Detalle", length: 7, position: "88-94", value: rec.slice(87, 94) },
-                    { id: 12, name: "Reservado", length: 12, position: "95-106", value: rec.slice(94, 106) },
-                ]
-            }
-        } else if (type === '8') {
-            flds = [
-                { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                { id: 2, name: "Código Clase de Transacción por Lote", length: 3, position: "2-4", value: rec.slice(1, 4) },
-                { id: 3, name: "Número de Trans./Adenda", length: 6, position: "5-10", value: rec.slice(4, 10) },
-                { id: 4, name: "Totales de Control", length: 10, position: "11-20", value: rec.slice(10, 20) },
-                { id: 5, name: "Valor Total de Débitos", length: 18, position: "21-38", value: rec.slice(20, 38) },
-                { id: 6, name: "Valor Total de Créditos", length: 18, position: "39-56", value: rec.slice(38, 56) },
-                { id: 7, name: "Identificador del Originador", length: 10, position: "57-66", value: rec.slice(56, 66) },
-                { id: 8, name: "Código de Autenticación", length: 19, position: "67-85", value: rec.slice(66, 85) },
-                { id: 9, name: "Reservado", length: 6, position: "86-91", value: rec.slice(85, 91) },
-                { id: 10, name: "ID Participante Originador", length: 8, position: "92-99", value: rec.slice(91, 99) },
-                { id: 11, name: "Número de Lote", length: 7, position: "100-106", value: rec.slice(99, 106) },
-            ]
-        } else if (type === '9') {
-            flds = [
-                { id: 1, name: "Tipo de registro", length: 1, position: "1-1", value: rec.slice(0, 1) },
-                { id: 2, name: "Cantidad de Lotes", length: 6, position: "2-7", value: rec.slice(1, 7) },
-                { id: 3, name: "Número de Bloques", length: 6, position: "8-13", value: rec.slice(7, 13) },
-                { id: 4, name: "Número de Trans./Adenda", length: 8, position: "14-21", value: rec.slice(13, 21) },
-                { id: 5, name: "Totales de Control", length: 10, position: "22-31", value: rec.slice(21, 31) },
-                { id: 6, name: "Valor Total de Débitos", length: 18, position: "32-49", value: rec.slice(31, 49) },
-                { id: 7, name: "Valor Total de Créditos", length: 18, position: "50-67", value: rec.slice(49, 67) },
-                { id: 8, name: "Reservado", length: 39, position: "68-106", value: rec.slice(67, 106) },
-            ]
-        }
-        return flds
-    }, [records, findParentRecord])
+        const defs = activeFieldMap[type] || []
+        if (!defs.length) return []
+        return extractFields(rec, defs) as Field[]
+    }, [activeFieldMap])
 
 
 
@@ -719,12 +513,12 @@ export default function Page() {
 
         if (type === '1') {
             ttl = `🌟 Registro de Encabezado de Archivo`
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         } else if (type === '5') {
             const ts = rec.slice(50, 53).trim()
             const desc = rec.slice(53, 63).trim()
             ttl = `🌟 Registro de Encabezado de Lote</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         } else if (type === '6') {
             const pi = findParentRecord(idx, '5')
             if (pi !== null) {
@@ -733,7 +527,7 @@ export default function Page() {
                 const desc = pr.slice(53, 63).trim()
                 ttl = `🌟 Registro de Detalle de Transacciones</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
             }
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         } else if (type === '7') {
             const pi = findParentRecord(idx, '5')
             if (pi !== null) {
@@ -742,7 +536,7 @@ export default function Page() {
                 const desc = pr.slice(53, 63).trim()
                 ttl = `🌟 Registro de Adenda de Transacción</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
             }
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         } else if (type === '8') {
             const pi = findParentRecord(idx, '5')
             if (pi !== null) {
@@ -751,15 +545,16 @@ export default function Page() {
                 const desc = pr.slice(53, 63).trim()
                 ttl = `🌟 Registro de Control de Lote</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
             }
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         } else if (type === '9') {
             ttl = `🌟 Registro de Control de Archivo`
-            flds = parseFields(rec, idx)
+            flds = parseFields(rec)
         }
 
         setTitle(ttl)
         setFields(flds)
         setCurrent(idx)
+        setFocusedIndex(idx)
         setIsOpen(true)
     }, [records, isRecordTypeClickable, parseFields, findParentRecord])
 
@@ -802,11 +597,11 @@ export default function Page() {
         }
 
         const first6Idx = type6Indices[0]
-        const fields6 = parseFields(records[first6Idx], first6Idx).filter(f => f.name !== 'Tipo de registro')
+        const fields6 = parseFields(records[first6Idx]).filter(f => f.name !== 'Tipo de registro')
 
         const nextIdx = first6Idx + 1
         const fields7 = records[nextIdx]?.charAt(0) === '7'
-            ? parseFields(records[nextIdx], nextIdx).filter(f => f.name !== 'Tipo de registro')
+            ? parseFields(records[nextIdx]).filter(f => f.name !== 'Tipo de registro')
             : []
 
         const headers = ['Registro', ...fields6.map(f => f.name), ...fields7.map(f => f.name)]
@@ -814,7 +609,7 @@ export default function Page() {
         const data = type6Indices.map((idx6, i) => {
             const row: Record<string, string | number> = { Registro: i + 1 }
 
-            parseFields(records[idx6], idx6)
+            parseFields(records[idx6])
                 .filter(f => f.name !== 'Tipo de registro')
                 .forEach(f => {
                     const raw = String(f.value ?? '') // sin meter ·
@@ -826,7 +621,7 @@ export default function Page() {
 
             const idx7 = idx6 + 1
             if (records[idx7]?.charAt(0) === '7') {
-                parseFields(records[idx7], idx7)
+                parseFields(records[idx7])
                     .filter(f => f.name !== 'Tipo de registro')
                     .forEach(f => {
                         const raw = String(f.value ?? '') // sin meter ·
@@ -848,17 +643,157 @@ export default function Page() {
         XLSX.writeFile(wb, `${fileName || 'reporte'}.xlsx`, { bookType: 'xlsx' })
     }
 
+    const selectedLineIndex = isOpen ? currentIndex : focusedIndex
+    const mergedLineMarks = useMemo(() => {
+        if (!records.length) return lineMarks
+        const base: { start: number; end: number; type: 'error' | 'ok' | 'info'; note?: string }[][] =
+            Array.from({ length: records.length }, (_, i) => (lineMarks?.[i] ? [...lineMarks[i]] : []))
+        for (let i = 0; i < searchHits.length; i++) {
+            const hit = searchHits[i]
+            base[hit.line].push({
+                start: hit.start,
+                end: hit.end,
+                type: 'info',
+                note: i === searchActive ? '__search_active__' : '__search__',
+            })
+        }
+        return base
+    }, [records.length, lineMarks, searchHits, searchActive])
+    const totalPre = useMemo(
+        () => Object.values(treeSummary.prenotificTotals || {}).reduce((acc, n) => acc + Number(n || 0), 0),
+        [treeSummary.prenotificTotals]
+    )
+
+    const jumpToBatch = (start: number) => {
+        setFocusedIndex(start)
+        if (isOpen) {
+            setCurrent(start)
+            setIsOpen(false)
+        }
+    }
+
+    const getBatchErrorCount = (start: number, end: number) => {
+        let count = 0
+        for (let i = start; i <= end; i++) {
+            const marks = lineMarks?.[i] || []
+            for (const m of marks) {
+                if (m.type === 'error') count += 1
+            }
+        }
+        return count
+    }
+
+    useEffect(() => {
+        setSearchTerm('')
+        setSearchHits([])
+        setSearchActive(-1)
+        setSearchOpen(false)
+    }, [fileName, records.length])
+
+    useEffect(() => {
+        if (!searchOpen) return
+        searchInputRef.current?.focus()
+        searchInputRef.current?.select()
+    }, [searchOpen])
+
+    useEffect(() => {
+        const term = searchTerm
+        if (!term || !records.length) {
+            setSearchHits([])
+            setSearchActive(-1)
+            return
+        }
+        const needle = term.toLowerCase()
+        const hits: SearchHit[] = []
+        for (let line = 0; line <= searchEndIdx; line++) {
+            const row = String(records[line] || '')
+            const hay = row.toLowerCase()
+            let from = 0
+            while (from <= hay.length - needle.length) {
+                const pos = hay.indexOf(needle, from)
+                if (pos === -1) break
+                hits.push({ line, start: pos, end: pos + needle.length })
+                from = pos + 1
+            }
+        }
+        setSearchHits(hits)
+        setSearchActive(hits.length ? 0 : -1)
+    }, [searchTerm, records, searchEndIdx])
+
+    useEffect(() => {
+        if (searchActive < 0 || searchActive >= searchHits.length) return
+        const active = searchHits[searchActive]
+        setFocusedIndex(active.line)
+        if (isOpen) setIsOpen(false)
+    }, [searchActive, searchHits, isOpen])
+
+    const jumpSearch = useCallback((direction: 1 | -1) => {
+        if (!searchHits.length) return
+        setSearchActive((prev) => {
+            const curr = prev < 0 ? 0 : prev
+            return (curr + direction + searchHits.length) % searchHits.length
+        })
+    }, [searchHits.length])
+
+    const closeSearch = useCallback(() => {
+        setSearchOpen(false)
+        setSearchTerm('')
+        setSearchHits([])
+        setSearchActive(-1)
+    }, [])
+
+    useEffect(() => {
+        const onKeyDown = (e: KeyboardEvent) => {
+            const isFind = (e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey)
+            if (isFind) {
+                e.preventDefault()
+                setSearchOpen(true)
+                return
+            }
+            if (e.key === 'F3') {
+                e.preventDefault()
+                jumpSearch(e.shiftKey ? -1 : 1)
+            }
+        }
+        window.addEventListener('keydown', onKeyDown)
+        return () => window.removeEventListener('keydown', onKeyDown)
+    }, [jumpSearch])
+
+    const updateFloatingRuler = useCallback((clientX: number) => {
+        if (!rulerEnabled) return
+        const scroller = nachamScrollerEl
+        if (!scroller) return
+        const rect = scroller.getBoundingClientRect()
+        const gutter = 12
+        const charW = getMonoCharWidth()
+        const x = clientX - rect.left + scroller.scrollLeft - gutter
+        const col = Math.max(1, Math.min(106, Math.floor(x / charW) + 1))
+        setHoverCol(col)
+        setRulerLeft(Math.round(gutter + ((col - 1) * charW)))
+        setRulerVisible(true)
+    }, [nachamScrollerEl, getMonoCharWidth, rulerEnabled])
+
+    const handleVisorMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+        if (!rulerEnabled) return
+        updateFloatingRuler(e.clientX)
+    }, [updateFloatingRuler, rulerEnabled])
+
+    const handleVisorMouseLeave = useCallback(() => {
+        setRulerVisible(false)
+        setHoverCol(null)
+    }, [])
+
     return (
         <>
             {/* Header */}
             <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
-                <div className="max-w-[1000px] mx-auto flex items-center justify-between py-2 px-4">
+                <div className="w-full flex items-center justify-between py-2 px-2">
                     <h1 className="m-0 text-xl font-semibold text-[#2D77C2]">Visor de archivos NACHAM</h1>
 
                     <div className="flex items-center space-x-4">
                         {fileName && (
-                            <div className="flex items-center text-gray-700 text-sm truncate max-w-xs">
-                                <span className="truncate">{fileName}</span>
+                            <div className="flex items-center text-gray-700 text-sm min-w-0">
+                                <span className="max-w-[42vw] break-all">{fileName}</span>
 
                                 {/* Archivo no NACHAM (errores duros de formato/firma) */}
                                 {isNachamValid === false && (
@@ -868,7 +803,7 @@ export default function Page() {
                                 )}
 
                                 {/* Progreso SOLO cuando realmente valida (no en devoluciones) */}
-                                {!isDevolucion && isValidating && progress > 0 && progress < 100 && (
+                                {!isDevolucion && hasUserValidated && isValidating && progress > 0 && progress < 100 && (
                                     <div className="ml-3 flex items-center gap-2 text-sm text-[#2D77C2]">
                                         <span>Validando archivo… {progress}%</span>
                                         <div className="w-28 h-1.5 bg-gray-200 rounded">
@@ -877,117 +812,286 @@ export default function Page() {
                                     </div>
                                 )}
 
-                                {/* ✅ Válido normal: escudo + export */}
-                                {!isDevolucion && isFullyValid && (
-                                    <>
-                                        <span className="ml-2 inline-flex items-center text-green-600" title="Validado 💯">
-                                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20"
-                                                viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                                strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
-                                                <path d="M9 12l2 2 4-4" />
-                                            </svg>
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={exportExcel}
-                                            className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
-                                            title="Exportar a Excel"
-                                            dangerouslySetInnerHTML={{ __html: svgExportIcono }}
-                                        />
-                                    </>
-                                )}
-
-                                {/* 🔵 Devolución: badge “Devolución” + export; SIN escudo verde */}
+                                {/* 🔵 Devolución */}
                                 {isDevolucion && (
-                                    <>
-                                        <span
-                                            className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-300"
-                                            title="Archivo de devolución (se omiten validaciones de consistencia)"
-                                        >
-                                            Devolución
-                                        </span>
-                                        <button
-                                            type="button"
-                                            onClick={exportExcel}
-                                            className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
-                                            title="Exportar a Excel"
-                                            dangerouslySetInnerHTML={{ __html: svgExportIcono }}
-                                        />
-                                    </>
+                                    <span
+                                        className="ml-2 inline-flex items-center px-2 py-0.5 rounded bg-sky-100 text-sky-700 border border-sky-300"
+                                        title="Archivo de devolución (se omiten validaciones de consistencia)"
+                                    >
+                                        Devolución
+                                    </span>
                                 )}
-
-                                {/* ⚠ Errores (no devolución): badge y SIN export */}
-                                {!isValidating && isNachamValid === true && !isDevolucion && errCount > 0 && (
-                                    <div className="ml-3 flex items-center gap-2 text-sm">
-                                        <span className="inline-flex items-center px-2 py-0.5 rounded bg-rose-100 text-rose-700 border border-rose-300">
-                                            💩 Errores ({errCount})
-                                        </span>                                        <button
-                                            type="button"
-                                            onClick={exportExcel}
-                                            className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
-                                            title="Exportar a Excel"
-                                            dangerouslySetInnerHTML={{ __html: svgExportIcono }}
-                                        />
-                                    </div>
-
+                                {canExport && (
+                                    <button
+                                        type="button"
+                                        onClick={exportExcel}
+                                        className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition"
+                                        title="Exportar a Excel"
+                                        dangerouslySetInnerHTML={{ __html: svgExportIcono }}
+                                    />
                                 )}
+                                {!isDevolucion && isNachamValid === true && (
+                                    <button
+                                        type="button"
+                                        onClick={runManualValidation}
+                                        disabled={isValidating}
+                                        className={`relative ml-2 p-1 rounded cursor-pointer transition ${isValidating
+                                            ? 'opacity-70 text-blue-700 bg-blue-50'
+                                            : hasUserValidated && errCount === 0
+                                                ? 'text-green-700 bg-green-50 hover:bg-green-100'
+                                                : hasUserValidated && errCount > 0
+                                                    ? 'text-rose-700 bg-rose-50 hover:bg-rose-100'
+                                                    : 'text-slate-700 hover:bg-gray-200'
+                                            }`}
+                                        title="Validar archivo"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
+                                            <path d="M9 12l2 2 4-4" />
+                                        </svg>
+                                        {hasUserValidated && errCount > 0 && (
+                                            <span className="absolute -top-1 -right-1 min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[11px] leading-5 text-center font-semibold">
+                                                {errCount}
+                                            </span>
+                                        )}
+                                    </button>
+                                )}
+                                <button
+                                    type="button"
+                                    onClick={() => setRulerEnabled((v) => !v)}
+                                    className={`ml-2 p-1 rounded cursor-pointer transition ${rulerEnabled ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-gray-200 text-gray-700'}`}
+                                    title={rulerEnabled ? 'Desactivar regla' : 'Activar regla'}
+                                    aria-pressed={rulerEnabled}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M4 18h16" />
+                                        <path d="M6 18v-3M9 18v-2M12 18v-3M15 18v-2M18 18v-3" />
+                                    </svg>
+                                </button>
+                                <button
+                                    type="button"
+                                    onClick={() => setSearchOpen((v) => !v)}
+                                    className={`ml-1 p-1 rounded cursor-pointer transition ${searchOpen ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-gray-200 text-gray-700'}`}
+                                    title={searchOpen ? 'Ocultar búsqueda' : 'Buscar'}
+                                    aria-pressed={searchOpen}
+                                >
+                                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <circle cx="11" cy="11" r="7" />
+                                        <path d="M16.5 16.5L21 21" />
+                                    </svg>
+                                </button>
                             </div>
                         )}
 
-                        <label
-                            htmlFor="fileInput"
-                            className="inline-block px-4 py-2 bg-green-600 hover:bg-green-700 active:bg-green-800
-        text-white text-sm font-medium rounded shadow cursor-pointer transition"
+                        <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="ml-1 p-1 rounded cursor-pointer transition hover:bg-gray-200 text-gray-700"
+                            title="Seleccionar NACHAM"
+                            aria-label="Seleccionar NACHAM"
                         >
-                            Seleccionar NACHAM
-                        </label>
-                        <input id="fileInput" type="file" accept="*.*" className="hidden" onChange={handleFile} />
+                            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 7.5A2.5 2.5 0 0 1 5.5 5H10l2 2h6.5A2.5 2.5 0 0 1 21 9.5V10" />
+                                <path d="M3 11h18l-2 7.5A2 2 0 0 1 17.1 20H6.9A2 2 0 0 1 5 18.5L3 11z" />
+                            </svg>
+                        </button>
+                        <input ref={fileInputRef} id="fileInput" type="file" accept="*.*" className="hidden" onChange={handleFile} />
                     </div>
                 </div>
             </header>
 
 
             {/* Main */}
-            <main className="p-2 space-y-6">
+            <main className="p-2 space-y-6 overflow-x-auto">
                 {records.length > 0 ? (
-                    <div id="detail" className="m-2 rounded-xl p-[2px] bg-[linear-gradient(45deg,#C9F5FF_0%,#FFC7D1_48%,#8AB087_100%)] shadow-md">
-                        <div
-                            ref={wrapperRef}
-                            className="relative rounded-[inherit] bg-white border border-gray-200 overflow-hidden"
-                            style={{ ["--visor-gutter" as any]: "12px" }}
-                        >
-                            {/* ✅ OVERLAY VA AQUÍ */}
-                            {colMarker !== null && (
-                                <div
-                                    className="pointer-events-none absolute top-0 bottom-0 z-20 column-guide"
-                                    style={{
-                                        left: `calc(var(--visor-gutter) + ${(colMarker - 1) * colW}px)`,
-                                        width: "1px",
-                                    }}
-                                />
+                    <div className="m-2 min-w-[1100px] grid grid-cols-[290px_minmax(0,1fr)] gap-3">
+                        <aside className="rounded-xl border border-slate-200 bg-white p-3 h-[80vh] flex flex-col">
+                            <div className="grid grid-cols-2 gap-2">
+                                <div className="rounded-lg border border-slate-200 p-2">
+                                    <div className="text-xs text-slate-500">Total Caracteres</div>
+                                    <div className="text-2xl font-semibold text-slate-900">{Number(records.length * 106).toLocaleString('es-CO')}</div>
+                                </div>
+                                <div className="rounded-lg border border-slate-200 p-2">
+                                    <div className="text-xs text-slate-500">Total Registros</div>
+                                    <div className="text-2xl font-semibold text-slate-900">{Number(records.length).toLocaleString('es-CO')}</div>
+                                </div>
+                                <div className="rounded-lg border border-slate-200 p-2">
+                                    <div className="text-xs text-slate-500">Lotes</div>
+                                    <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.batches.length).toLocaleString('es-CO')}</div>
+                                </div>
+                                {Number(treeSummary.totalOrders || 0) > 0 && (
+                                    <div className="rounded-lg border border-slate-200 p-2">
+                                        <div className="text-xs text-slate-500">Ordenes de Pago</div>
+                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalOrders).toLocaleString('es-CO')}</div>
+                                    </div>
+                                )}
+                                {totalPre > 0 && (
+                                    <div className="rounded-lg border border-slate-200 p-2">
+                                        <div className="text-xs text-slate-500">Total Prenotificaciones</div>
+                                        <div className="text-2xl font-semibold text-slate-900">{Number(totalPre).toLocaleString('es-CO')}</div>
+                                    </div>
+                                )}
+                                {Number(treeSummary.totalTransfers || 0) > 0 && (
+                                    <div className="rounded-lg border border-slate-200 p-2">
+                                        <div className="text-xs text-slate-500">Registros de Traslado</div>
+                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
+                                    </div>
+                                )}
+                                {Number(treeSummary.totalTregcontrol || 0) > 0 && (
+                                    <div className="rounded-lg border border-slate-200 p-2">
+                                        <div className="text-xs text-slate-500">Total RC Traslado</div>
+                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalTregcontrol).toLocaleString('es-CO')}</div>
+                                    </div>
+                                )}
+                                {hasNonZeroAmount(treeSummary.fileDebitTotal9) && (
+                                    <div className="rounded-lg border border-slate-200 p-2 col-span-2">
+                                        <div className="text-xs text-slate-500">Total Débitos</div>
+                                        <div className="text-xl font-semibold text-slate-900 break-all">{formatMoneyFromRaw(treeSummary.fileDebitTotal9)}</div>
+                                    </div>
+                                )}
+                                {hasNonZeroAmount(treeSummary.fileCreditTotal9) && (
+                                    <div className="rounded-lg border border-slate-200 p-2 col-span-2">
+                                        <div className="text-xs text-slate-500">Total Créditos</div>
+                                        <div className="text-xl font-semibold text-slate-900 break-all">{formatMoneyFromRaw(treeSummary.fileCreditTotal9)}</div>
+                                    </div>
+                                )}
+                            </div>
+                            <div className="mt-3 flex-1 min-h-0 overflow-auto space-y-2 pr-1 pb-2">
+                                {treeSummary.batches.map((batch) => {
+                                    const errorCount = getBatchErrorCount(batch.start, batch.end)
+                                    const preCount = Object.values(batch.prenotificCounts || {}).reduce((acc, val) => acc + Number(val || 0), 0)
+                                    const amountParts: string[] = []
+                                    if (hasNonZeroAmount(batch.debitTotal8)) amountParts.push(`Déb: ${formatMoneyFromRaw(batch.debitTotal8)}`)
+                                    if (hasNonZeroAmount(batch.creditTotal8)) amountParts.push(`Créd: ${formatMoneyFromRaw(batch.creditTotal8)}`)
+                                    return (
+                                        <button
+                                            key={`${batch.batchNo}-${batch.start}`}
+                                            type="button"
+                                            onClick={() => jumpToBatch(batch.start)}
+                                            className={`w-full text-left rounded-lg border p-2 transition ${selectedLineIndex === batch.start ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
+                                        >
+                                            <div className="flex items-center justify-between">
+                                                <div className="font-semibold text-slate-900">{batch.id || `Lote ${batch.batchNo}`}</div>
+                                                <div className="flex items-center gap-2">
+                                                    {errorCount > 0 && (
+                                                        <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[11px] font-semibold">
+                                                            {errorCount}
+                                                        </span>
+                                                    )}
+                                                    <div className="text-xs text-slate-600">{batch.start + 1}-{batch.end + 1}</div>
+                                                </div>
+                                            </div>
+                                            <div className="text-xs text-slate-600 mt-1">
+                                                Registros:{batch.entryCount} Adendas:{batch.addendaCount}
+                                                {batch.orderCount > 0 ? ` OP:${batch.orderCount}` : ''}
+                                                {batch.transferCount > 0 ? ` Trasl:${batch.transferCount}` : ''}
+                                                {preCount > 0 ? ` Prenot:${preCount}` : ''}
+                                            </div>
+                                            {amountParts.length > 0 && (
+                                                <div className="text-xs text-slate-700 mt-1">{amountParts.join('  ')}</div>
+                                            )}
+                                        </button>
+                                    )
+                                })}
+                            </div>
+                        </aside>
+
+                        <div className="h-[80vh] flex flex-col gap-2">
+                            {searchOpen && (
+                                <div className="rounded-lg border border-slate-200 bg-white px-2 py-2 flex items-center gap-2">
+                                    <input
+                                        ref={searchInputRef}
+                                        value={searchTerm}
+                                        onChange={(e) => setSearchTerm(e.target.value)}
+                                        onKeyDown={(e) => {
+                                            if (e.key === 'Enter') {
+                                                e.preventDefault()
+                                                jumpSearch(e.shiftKey ? -1 : 1)
+                                            } else if (e.key === 'Escape') {
+                                                e.preventDefault()
+                                                closeSearch()
+                                            }
+                                        }}
+                                        placeholder="Buscar en archivo..."
+                                        className="w-[300px] max-w-[40vw] border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={() => jumpSearch(-1)}
+                                        className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                        title="Anterior"
+                                    >
+                                        ↑
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => jumpSearch(1)}
+                                        className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                        title="Siguiente"
+                                    >
+                                        ↓
+                                    </button>
+                                    <span className="text-sm text-slate-600 min-w-[220px]">
+                                        {searchHits.length && searchActive >= 0
+                                            ? `${searchActive + 1} de ${searchHits.length} · Línea ${searchHits[searchActive].line + 1} · Pos ${searchHits[searchActive].start + 1}-${searchHits[searchActive].end}`
+                                            : 'Sin búsqueda'}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        onClick={closeSearch}
+                                        className="ml-auto w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                                        title="Cerrar búsqueda"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
                             )}
-                            <RulerOutside
-                                lineLen={106}
-                                scrollerEl={nachamScrollerEl}
-                                onPickCol={setColMarker}
-                                onColW={setColW}
-                            />
-                            <div className="border-t border-slate-200" />
-                            <NachamVisor
-                                records={records}
-                                lineHeight={20}
-                                height={listHeight}
-                                onRowClick={handleRowClick}
-                                selectedIndex={isOpen ? currentIndex : undefined}
-                                badFromIndex={badFromIndex}
-                                badRows={[...badRowSet]}
-                                lineStatus={lineStatus}
-                                lineMarks={lineMarks}
-                                isClickable={isClickable}
-                                onScrollerReady={(el) => setNachamScrollerEl(el)}
-                            />
-                        </div></div>
+                        <div className="flex-1 rounded-xl p-[2px] bg-[linear-gradient(45deg,#C9F5FF_0%,#FFC7D1_48%,#8AB087_100%)] shadow-md">
+                            <div
+                                className="relative h-full rounded-[inherit] bg-white border border-gray-200 overflow-hidden"
+                                style={{ ["--visor-gutter" as any]: "12px" }}
+                                onMouseMove={handleVisorMouseMove}
+                                onMouseLeave={handleVisorMouseLeave}
+                            >
+                                {rulerEnabled && rulerVisible && hoverCol !== null && (
+                                    <>
+                                        <div
+                                            className="pointer-events-none absolute top-0 bottom-0 z-20"
+                                            style={{
+                                                left: `${rulerLeft}px`,
+                                                width: '1px',
+                                                background: 'rgba(59,130,246,0.55)',
+                                            }}
+                                        />
+                                        <div
+                                            className="pointer-events-none absolute z-30 text-[11px] leading-none px-2 py-1 rounded bg-blue-600 text-white shadow"
+                                            style={{
+                                                left: `${Math.max(4, rulerLeft - 22)}px`,
+                                                top: `8px`,
+                                            }}
+                                        >
+                                            Pos {hoverCol}
+                                        </div>
+                                    </>
+                                )}
+                                <NachamVisor
+                                    records={records}
+                                    lineHeight={20}
+                                    height={listHeight}
+                                    onRowClick={handleRowClick}
+                                    selectedIndex={selectedLineIndex}
+                                    badFromIndex={badFromIndex}
+                                    badRows={[...badRowSet]}
+                                    lineStatus={lineStatus}
+                                    lineMarks={mergedLineMarks}
+                                    fieldMap={activeFieldMap}
+                                    isClickable={isClickable}
+                                    onScrollerReady={(el) => setNachamScrollerEl(el)}
+                                />
+                            </div>
+                        </div>
+                        </div>
+                    </div>
                 ) : (
                     <p className="text-gray-600">Asegúrese de cargar un NACHAM en formato válido.</p>
                 )}
