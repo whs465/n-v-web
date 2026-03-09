@@ -781,7 +781,7 @@ export default function Page() {
         const scroller = nachamScrollerEl
         if (!scroller) return
         const rect = scroller.getBoundingClientRect()
-        const gutter = 12
+        const gutter = 56
         const charW = getMonoCharWidth()
         const x = clientX - rect.left + scroller.scrollLeft - gutter
         const col = Math.max(1, Math.min(106, Math.floor(x / charW) + 1))
@@ -1066,7 +1066,7 @@ export default function Page() {
                         <div className="flex-1 rounded-xl p-[2px] bg-[linear-gradient(45deg,#C9F5FF_0%,#FFC7D1_48%,#8AB087_100%)] shadow-md">
                             <div
                                 className="relative h-full rounded-[inherit] bg-white border border-gray-200 overflow-hidden"
-                                style={{ ["--visor-gutter" as any]: "12px" }}
+                                style={{ ["--visor-gutter" as any]: "56px" }}
                                 onMouseMove={handleVisorMouseMove}
                                 onMouseLeave={handleVisorMouseLeave}
                             >

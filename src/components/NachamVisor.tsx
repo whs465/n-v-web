@@ -206,8 +206,14 @@ export default function NachamVisor({
                 onDoubleClick={() => canOpen && onRowClick(index)} // si tu modal es doble click, poné tu handler acá
                 title={rowTitle}
             >
-                {/* ✅ Spacer visual: NO afecta el layout de la fila para eventos */}
-                <span aria-hidden="true" style={{ display: "inline-block", width: "var(--visor-gutter)" }} />
+                <span
+                    data-line-no="1"
+                    className="inline-flex items-center justify-end pr-2 text-[12px] text-slate-400 select-none border-r border-slate-200/70"
+                    style={{ width: "var(--visor-gutter)" }}
+                    title={`Línea ${index + 1}`}
+                >
+                    {index + 1}
+                </span>
                 {renderWithMarks(rec, marks, tips)}
             </div>
         )
