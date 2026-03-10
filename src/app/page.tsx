@@ -39,6 +39,156 @@ function hasNonZeroAmount(raw: string) {
 
 type SearchHit = { line: number; start: number; end: number }
 
+function slice1(str: string, start1: number, end1: number) {
+    return String(str || '').slice(start1 - 1, end1)
+}
+
+function classifySqlType(value: string) {
+    const trimmed = String(value || '').trim()
+    const upper = trimmed.toUpperCase()
+    if (/^\d+$/.test(trimmed)) return 'OP'
+    if (upper.startsWith('PRENOTIFIC')) return 'PRE'
+    if (/^TR\d+$/.test(upper)) return 'TR'
+    if (upper.startsWith('TREG')) return 'TREG'
+    return 'OTRO'
+}
+
+function formatSqlAmount(raw: string) {
+    const digits = String(raw || '').replace(/\D/g, '')
+    if (!digits) return ''
+    const clean = digits.replace(/^0+/, '') || '0'
+    if (clean.length === 1) return `0.0${clean}`
+    if (clean.length === 2) return `0.${clean}`
+    return `${clean.slice(0, -2)}.${clean.slice(-2)}`
+}
+
+type SqlRow = {
+    linea: string
+    codigo_ruta_transito: string
+    clase_transaccion: string
+    numero_cuenta: string
+    valor: string
+    id_receptor: string
+    clase_mov: string
+    tipo_registro: string
+    numero_orden_pago: string
+    numero_secuencia: string
+    numero_secuencia_original: string
+    infoadicional: string
+}
+
+function buildSqlRowsFromLines(lines: string[]): SqlRow[] {
+    const rows: SqlRow[] = []
+    let lastRow: SqlRow | null = null
+    let loteKey5 = ''
+    let loteCodigo = ''
+    let loteUsaKey6 = false
+
+    for (let i = 0; i < lines.length; i++) {
+        const raw = String(lines[i] || '')
+        const type = raw.charAt(0)
+
+        if (type === '9') break
+
+        if (type === '5') {
+            loteKey5 = slice1(raw, 85, 91).trim()
+            loteUsaKey6 = loteKey5 === '0001683'
+            loteCodigo = loteUsaKey6 ? '' : loteKey5
+            lastRow = null
+            continue
+        }
+
+        if (type === '6') {
+            if (loteUsaKey6 && !loteCodigo) loteCodigo = slice1(raw, 5, 11).trim()
+            const tipoRegistro = slice1(raw, 63, 84).trim()
+            const claseMov = classifySqlType(tipoRegistro)
+            const row: SqlRow = {
+                linea: String(i + 1),
+                codigo_ruta_transito: loteCodigo,
+                clase_transaccion: slice1(raw, 2, 3),
+                numero_cuenta: slice1(raw, 13, 29).trim(),
+                valor: formatSqlAmount(slice1(raw, 30, 47)),
+                id_receptor: slice1(raw, 48, 62).trim(),
+                clase_mov: claseMov,
+                tipo_registro: tipoRegistro,
+                numero_orden_pago: claseMov === 'OP' ? tipoRegistro : '',
+                numero_secuencia: slice1(raw, 88, 102),
+                numero_secuencia_original: '',
+                infoadicional: '',
+            }
+            rows.push(row)
+            lastRow = row
+            continue
+        }
+
+        if (type === '7' && lastRow) {
+            lastRow.numero_secuencia_original = slice1(raw, 7, 21)
+            lastRow.infoadicional = slice1(raw, 38, 81)
+        }
+    }
+
+    return rows
+}
+
+function escapeSql(value: string) {
+    return `N'${String(value ?? '').replace(/'/g, "''")}'`
+}
+
+function toSqlScript(rows: SqlRow[]) {
+    const lines: string[] = []
+    lines.push('-- generado por Visor NACHA')
+    lines.push('SET NOCOUNT ON;')
+    lines.push('')
+    lines.push("IF OBJECT_ID('tempdb..#tmp_nacha') IS NOT NULL DROP TABLE #tmp_nacha;")
+    lines.push('CREATE TABLE #tmp_nacha (')
+    lines.push('  linea                      INT            NULL,')
+    lines.push('  codigo_ruta_transito       NVARCHAR(7)    NULL,')
+    lines.push('  clase_transaccion          NVARCHAR(2)    NULL,')
+    lines.push('  numero_cuenta              NVARCHAR(17)   NULL,')
+    lines.push('  valor                      DECIMAL(18,2)  NULL,')
+    lines.push('  id_receptor                NVARCHAR(15)   NULL,')
+    lines.push('  clase_mov                  NVARCHAR(6)    NULL,')
+    lines.push('  tipo_registro              NVARCHAR(22)   NULL,')
+    lines.push('  numero_orden_pago          NVARCHAR(22)   NULL,')
+    lines.push('  numero_secuencia           NVARCHAR(15)   NULL,')
+    lines.push('  numero_secuencia_original  NVARCHAR(15)   NULL,')
+    lines.push('  infoadicional              NVARCHAR(44)   NULL')
+    lines.push(');')
+    lines.push('')
+
+    if (!Array.isArray(rows) || rows.length === 0) {
+        lines.push('-- sin filas')
+        return lines.join('\n')
+    }
+
+    lines.push('INSERT INTO #tmp_nacha (linea, codigo_ruta_transito, clase_transaccion, numero_cuenta, valor, id_receptor, clase_mov, tipo_registro, numero_orden_pago, numero_secuencia, numero_secuencia_original, infoadicional) VALUES')
+    const values = rows.map((row) => {
+        const amount = row.valor ? row.valor : 'NULL'
+        return (
+            '(' +
+            [
+                row.linea ? row.linea : 'NULL',
+                escapeSql(row.codigo_ruta_transito),
+                escapeSql(row.clase_transaccion),
+                escapeSql(row.numero_cuenta),
+                amount === 'NULL' ? 'NULL' : amount,
+                escapeSql(row.id_receptor),
+                escapeSql(row.clase_mov),
+                escapeSql(row.tipo_registro),
+                escapeSql(row.numero_orden_pago),
+                escapeSql(row.numero_secuencia),
+                escapeSql(row.numero_secuencia_original),
+                escapeSql(row.infoadicional),
+            ].join(', ') +
+            ')'
+        )
+    })
+    lines.push(`${values.join(',\n')};`)
+    lines.push('')
+    lines.push('-- SELECT * FROM #tmp_nacha;')
+    return lines.join('\n')
+}
+
 export default function Page() {
     const {
         isValidating,
@@ -671,6 +821,27 @@ export default function Page() {
         XLSX.writeFile(wb, `${fileName || 'reporte'}.xlsx`, { bookType: 'xlsx' })
     }
 
+    const exportSql = () => {
+        if (!records.length) return
+        if (!canExport) {
+            showError('No se puede exportar SQL: el archivo presenta errores.')
+            return
+        }
+
+        const rows = buildSqlRowsFromLines(records)
+        const sql = toSqlScript(rows)
+        const baseName = (fileName || 'nacha').replace(/\.[^/.]+$/, '')
+        const blob = new Blob([sql], { type: 'text/sql;charset=utf-8' })
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = `${baseName}.sql`
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+    }
+
     const selectedLineIndex = isOpen ? currentIndex : focusedIndex
     const mergedLineMarks = useMemo(() => {
         if (!records.length) return lineMarks
@@ -856,6 +1027,20 @@ export default function Page() {
                                         title="Exportar a Excel"
                                         dangerouslySetInnerHTML={{ __html: svgExportIcono }}
                                     />
+                                )}
+                                {canExport && (
+                                    <button
+                                        type="button"
+                                        onClick={exportSql}
+                                        className="ml-2 p-1 rounded hover:bg-gray-200 cursor-pointer transition text-slate-700"
+                                        title="Descargar SQL"
+                                    >
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <ellipse cx="12" cy="5" rx="7" ry="3" />
+                                            <path d="M5 5v6c0 1.7 3.1 3 7 3s7-1.3 7-3V5" />
+                                            <path d="M5 11v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" />
+                                        </svg>
+                                    </button>
                                 )}
                                 {!isDevolucion && isNachamValid === true && (
                                     <button
@@ -1129,9 +1314,9 @@ export default function Page() {
                                     </button>
                                 </div>
                             )}
-                        <div className="flex-1 rounded-xl p-[2px] bg-[linear-gradient(45deg,#C9F5FF_0%,#FFC7D1_48%,#8AB087_100%)] shadow-md">
+                        <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden">
                             <div
-                                className="relative h-full rounded-[inherit] bg-white border border-gray-200 overflow-hidden"
+                                className="relative h-full bg-white overflow-hidden"
                                 style={{ ["--visor-gutter" as any]: "56px" }}
                                 onMouseMove={handleVisorMouseMove}
                                 onMouseLeave={handleVisorMouseLeave}
