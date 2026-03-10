@@ -67,6 +67,7 @@ export default function Page() {
     const [rulerLeft, setRulerLeft] = useState<number>(0)
     const [rulerVisible, setRulerVisible] = useState(false)
     const [rulerEnabled, setRulerEnabled] = useState(false)
+    const [showSpaces, setShowSpaces] = useState(true)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [searchHits, setSearchHits] = useState<SearchHit[]>([])
@@ -97,8 +98,11 @@ export default function Page() {
         if (typeof window === 'undefined') return
         try {
             setRulerEnabled(window.localStorage.getItem('nacham.web.ruler.enabled') === '1')
+            const savedSpaces = window.localStorage.getItem('nacham.web.showSpaces')
+            setShowSpaces(savedSpaces === null ? true : savedSpaces === '1')
         } catch {
             setRulerEnabled(false)
+            setShowSpaces(true)
         }
     }, [])
 
@@ -112,6 +116,13 @@ export default function Page() {
             setHoverCol(null)
         }
     }, [rulerEnabled])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        try {
+            window.localStorage.setItem('nacham.web.showSpaces', showSpaces ? '1' : '0')
+        } catch { }
+    }, [showSpaces])
 
     const getMonoCharWidth = useCallback(() => {
         const scroller = nachamScrollerEl
@@ -741,8 +752,7 @@ export default function Page() {
         if (searchActive < 0 || searchActive >= searchHits.length) return
         const active = searchHits[searchActive]
         setFocusedIndex(active.line)
-        if (isOpen) setIsOpen(false)
-    }, [searchActive, searchHits, isOpen])
+    }, [searchActive, searchHits])
 
     const jumpSearch = useCallback((direction: 1 | -1) => {
         if (!searchHits.length) return
@@ -887,6 +897,27 @@ export default function Page() {
                                 </button>
                                 <button
                                     type="button"
+                                    onClick={() => setShowSpaces((v) => !v)}
+                                    className={`ml-1 p-1 rounded cursor-pointer transition ${showSpaces ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-gray-200 text-gray-700'}`}
+                                    title={showSpaces ? 'Mostrar espacios' : 'Mostrar espacios como puntos'}
+                                    aria-pressed={showSpaces}
+                                >
+                                    {showSpaces ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M5 12h14" />
+                                            <circle cx="12" cy="12" r="2" />
+                                            <path d="M5 7h14M5 17h14" />
+                                        </svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M5 12h14" />
+                                            <path d="M4 6l16 12" />
+                                            <path d="M4 18l16-12" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <button
+                                    type="button"
                                     onClick={() => setSearchOpen((v) => !v)}
                                     className={`ml-1 p-1 rounded cursor-pointer transition ${searchOpen ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-gray-200 text-gray-700'}`}
                                     title={searchOpen ? 'Ocultar búsqueda' : 'Buscar'}
@@ -927,50 +958,50 @@ export default function Page() {
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Total Caracteres</div>
-                                    <div className="text-2xl font-semibold text-slate-900">{Number(records.length * 106).toLocaleString('es-CO')}</div>
+                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length * 106).toLocaleString('es-CO')}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Total Registros</div>
-                                    <div className="text-2xl font-semibold text-slate-900">{Number(records.length).toLocaleString('es-CO')}</div>
+                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length).toLocaleString('es-CO')}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Lotes</div>
-                                    <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.batches.length).toLocaleString('es-CO')}</div>
+                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.batches.length).toLocaleString('es-CO')}</div>
                                 </div>
                                 {Number(treeSummary.totalOrders || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Ordenes de Pago</div>
-                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalOrders).toLocaleString('es-CO')}</div>
+                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalOrders).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {totalPre > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Total Prenotificaciones</div>
-                                        <div className="text-2xl font-semibold text-slate-900">{Number(totalPre).toLocaleString('es-CO')}</div>
+                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(totalPre).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {Number(treeSummary.totalTransfers || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Registros de Traslado</div>
-                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
+                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {Number(treeSummary.totalTregcontrol || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Total RC Traslado</div>
-                                        <div className="text-2xl font-semibold text-slate-900">{Number(treeSummary.totalTregcontrol).toLocaleString('es-CO')}</div>
+                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTregcontrol).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {hasNonZeroAmount(treeSummary.fileDebitTotal9) && (
                                     <div className="rounded-lg border border-slate-200 p-2 col-span-2">
                                         <div className="text-xs text-slate-500">Total Débitos</div>
-                                        <div className="text-xl font-semibold text-slate-900 break-all">{formatMoneyFromRaw(treeSummary.fileDebitTotal9)}</div>
+                                        <div className="text-xl font-semibold text-slate-900 break-all text-right tabular-nums">{formatMoneyFromRaw(treeSummary.fileDebitTotal9)}</div>
                                     </div>
                                 )}
                                 {hasNonZeroAmount(treeSummary.fileCreditTotal9) && (
                                     <div className="rounded-lg border border-slate-200 p-2 col-span-2">
                                         <div className="text-xs text-slate-500">Total Créditos</div>
-                                        <div className="text-xl font-semibold text-slate-900 break-all">{formatMoneyFromRaw(treeSummary.fileCreditTotal9)}</div>
+                                        <div className="text-xl font-semibold text-slate-900 break-all text-right tabular-nums">{formatMoneyFromRaw(treeSummary.fileCreditTotal9)}</div>
                                     </div>
                                 )}
                             </div>
@@ -978,9 +1009,8 @@ export default function Page() {
                                 {treeSummary.batches.map((batch) => {
                                     const errorCount = getBatchErrorCount(batch.start, batch.end)
                                     const preCount = Object.values(batch.prenotificCounts || {}).reduce((acc, val) => acc + Number(val || 0), 0)
-                                    const amountParts: string[] = []
-                                    if (hasNonZeroAmount(batch.debitTotal8)) amountParts.push(`Déb: ${formatMoneyFromRaw(batch.debitTotal8)}`)
-                                    if (hasNonZeroAmount(batch.creditTotal8)) amountParts.push(`Créd: ${formatMoneyFromRaw(batch.creditTotal8)}`)
+                                    const showDebit = hasNonZeroAmount(batch.debitTotal8)
+                                    const showCredit = hasNonZeroAmount(batch.creditTotal8)
                                     return (
                                         <button
                                             key={`${batch.batchNo}-${batch.start}`}
@@ -999,14 +1029,49 @@ export default function Page() {
                                                     <div className="text-xs text-slate-600">{batch.start + 1}-{batch.end + 1}</div>
                                                 </div>
                                             </div>
-                                            <div className="text-xs text-slate-600 mt-1">
-                                                Registros:{batch.entryCount} Adendas:{batch.addendaCount}
-                                                {batch.orderCount > 0 ? ` OP:${batch.orderCount}` : ''}
-                                                {batch.transferCount > 0 ? ` Trasl:${batch.transferCount}` : ''}
-                                                {preCount > 0 ? ` Prenot:${preCount}` : ''}
+                                            <div className="mt-1 flex flex-wrap items-center gap-y-1 text-xs text-slate-600">
+                                                <span className="whitespace-nowrap mr-3">
+                                                    <span>Registros:</span>
+                                                    <span className="ml-1 font-semibold text-slate-800 tabular-nums">{Number(batch.entryCount || 0).toLocaleString('es-CO')}</span>
+                                                </span>
+                                                <span className="whitespace-nowrap mr-3">
+                                                    <span>Adendas:</span>
+                                                    <span className="ml-1 font-semibold text-slate-800 tabular-nums">{Number(batch.addendaCount || 0).toLocaleString('es-CO')}</span>
+                                                </span>
+                                                {batch.orderCount > 0 && (
+                                                    <span className="whitespace-nowrap mr-3">
+                                                        <span>OP:</span>
+                                                        <span className="ml-1 font-semibold text-slate-800 tabular-nums">{Number(batch.orderCount || 0).toLocaleString('es-CO')}</span>
+                                                    </span>
+                                                )}
+                                                {batch.transferCount > 0 && (
+                                                    <span className="whitespace-nowrap mr-3">
+                                                        <span>Trasl:</span>
+                                                        <span className="ml-1 font-semibold text-slate-800 tabular-nums">{Number(batch.transferCount || 0).toLocaleString('es-CO')}</span>
+                                                    </span>
+                                                )}
+                                                {preCount > 0 && (
+                                                    <span className="whitespace-nowrap mr-3">
+                                                        <span>Prenot:</span>
+                                                        <span className="ml-1 font-semibold text-slate-800 tabular-nums">{Number(preCount || 0).toLocaleString('es-CO')}</span>
+                                                    </span>
+                                                )}
                                             </div>
-                                            {amountParts.length > 0 && (
-                                                <div className="text-xs text-slate-700 mt-1">{amountParts.join('  ')}</div>
+                                            {(showDebit || showCredit) && (
+                                                <div className="mt-1 flex flex-wrap items-center gap-y-1 text-xs text-slate-700">
+                                                    {showDebit && (
+                                                        <span className="whitespace-nowrap mr-3">
+                                                            <span>Déb:</span>
+                                                            <span className="ml-1 font-semibold text-slate-800 tabular-nums">{formatMoneyFromRaw(batch.debitTotal8)}</span>
+                                                        </span>
+                                                    )}
+                                                    {showCredit && (
+                                                        <span className="whitespace-nowrap mr-3">
+                                                            <span>Créd:</span>
+                                                            <span className="ml-1 font-semibold text-slate-800 tabular-nums">{formatMoneyFromRaw(batch.creditTotal8)}</span>
+                                                        </span>
+                                                    )}
+                                                </div>
                                             )}
                                         </button>
                                     )
@@ -1105,6 +1170,7 @@ export default function Page() {
                                     fieldMap={activeFieldMap}
                                     isClickable={isClickable}
                                     onScrollerReady={(el) => setNachamScrollerEl(el)}
+                                    showSpaces={showSpaces}
                                 />
                             </div>
                         </div>

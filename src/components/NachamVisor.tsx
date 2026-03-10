@@ -28,6 +28,7 @@ interface NachamVisorProps {
     fieldMap?: FieldMap
     isClickable?: (idx: number, rec: string) => boolean
     onScrollerReady?: (el: HTMLDivElement) => void
+    showSpaces?: boolean
 }
 
 export default function NachamVisor({
@@ -42,7 +43,8 @@ export default function NachamVisor({
     lineMarks,
     fieldMap,
     isClickable,
-    onScrollerReady
+    onScrollerReady,
+    showSpaces = true
 }: NachamVisorProps) {
     const listRef = useRef<List>(null)
 
@@ -73,6 +75,22 @@ export default function NachamVisor({
     }, [selectedIndex])
 
     // Utilidad: partir una línea en segmentos coloreados a partir de las marcas
+    const renderSegmentText = (segment: string) => {
+        if (!showSpaces) return segment
+        if (!segment.includes(' ')) return segment
+        return (
+            <>
+                {Array.from(segment).map((ch, idx) =>
+                    ch === ' ' ? (
+                        <span key={idx} className="text-slate-400/70 font-normal">·</span>
+                    ) : (
+                        <React.Fragment key={idx}>{ch}</React.Fragment>
+                    )
+                )}
+            </>
+        )
+    }
+
     const renderWithMarks = (
         text: string,
         marks: LineMark[],
@@ -110,6 +128,8 @@ export default function NachamVisor({
             const s = boundaries[i]
             const e = boundaries[i + 1]
             const segment = text.slice(s, e)
+            const isFieldStart = tips.some(t => t.start === s)
+            const isFieldEnd = tips.some(t => t.end === e)
 
             // Clase de fondo por prioridad (error > ok > info)
             let bg = ''
@@ -133,17 +153,29 @@ export default function NachamVisor({
 
             // — NUEVO — Borde separador a la derecha para todos los segmentos marcados
             // (incluidos errores consecutivos). No afecta a segmentos sin marca.
-            let sep = ''
-            if (isSearchActive || isSearch) sep = ''
-            else if (t === 'error') sep = 'shadow-[inset_-1px_0_0_rgba(244,63,94,0.65)]'
-            else if (t === 'ok') sep = 'shadow-[inset_-1px_0_0_rgba(22,163,74,0.45)]'
-            else if (t === 'info') sep = 'shadow-[inset_-1px_0_0_rgba(14,165,233,0.35)]'
-            else if (tipOwner) sep = 'shadow-[inset_-1px_0_0_rgba(148,163,184,0.65)]'
-            // Si no hay marca (t undefined), dejamos sin borde.
+            const shadows: string[] = []
+            if (!(isSearchActive || isSearch)) {
+                if (t === 'error') shadows.push('inset -1px 0 0 rgba(244,63,94,0.65)')
+                else if (t === 'ok') shadows.push('inset -1px 0 0 rgba(22,163,74,0.45)')
+                else if (t === 'info') shadows.push('inset -1px 0 0 rgba(14,165,233,0.35)')
+                else if (tipOwner) shadows.push('inset -1px 0 0 rgba(148,163,184,0.65)')
+            }
+            // Separadores sutiles de inicio/fin de campo para ubicar límites visualmente.
+            if (isFieldStart) shadows.push('inset 1px 0 0 rgba(100,116,139,0.35)')
+            if (isFieldEnd) shadows.push('inset -1px 0 0 rgba(100,116,139,0.35)')
+            if (tipOwner) {
+                shadows.push('inset 0 1px 0 rgba(148,163,184,0.45)')
+                shadows.push('inset 0 -1px 0 rgba(148,163,184,0.45)')
+            }
 
             chunks.push(
-                <span key={`${s}-${e}`} className={`${bg} ${sep} ${tipOwner ? 'rounded-[2px] shadow-[inset_0_1px_0_rgba(148,163,184,0.45),inset_0_-1px_0_rgba(148,163,184,0.45)]' : ''}`} title={title}>
-                    {segment.replace(/ /g, '·')}
+                <span
+                    key={`${s}-${e}`}
+                    className={`${bg} ${tipOwner ? 'rounded-[2px]' : ''}`}
+                    style={shadows.length ? { boxShadow: shadows.join(', ') } : undefined}
+                    title={title}
+                >
+                    {renderSegmentText(segment)}
                 </span>
             )
         }
