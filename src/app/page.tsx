@@ -67,7 +67,7 @@ export default function Page() {
     const [rulerLeft, setRulerLeft] = useState<number>(0)
     const [rulerVisible, setRulerVisible] = useState(false)
     const [rulerEnabled, setRulerEnabled] = useState(false)
-    const [showSpaces, setShowSpaces] = useState(true)
+    const [showSpaces, setShowSpaces] = useState(false)
     const [searchOpen, setSearchOpen] = useState(false)
     const [searchTerm, setSearchTerm] = useState('')
     const [searchHits, setSearchHits] = useState<SearchHit[]>([])
@@ -99,10 +99,10 @@ export default function Page() {
         try {
             setRulerEnabled(window.localStorage.getItem('nacham.web.ruler.enabled') === '1')
             const savedSpaces = window.localStorage.getItem('nacham.web.showSpaces')
-            setShowSpaces(savedSpaces === null ? true : savedSpaces === '1')
+            setShowSpaces(savedSpaces === null ? false : savedSpaces === '1')
         } catch {
             setRulerEnabled(false)
-            setShowSpaces(true)
+            setShowSpaces(false)
         }
     }, [])
 
