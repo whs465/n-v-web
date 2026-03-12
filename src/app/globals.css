@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Work+Sans:wght@400;500;600;700&display=swap");
 @import "tailwindcss";
 
 /* =========================
@@ -10,7 +11,7 @@
 
   /* Fuentes: define SIEMPRE los tokens finales */
   /* Work Sans debe existir como --font-work-sans (Next/font o @import), si no cae al fallback */
-  --font-sans: var(--font-work-sans, system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
+  --font-sans: var(--font-work-sans, "Work Sans", system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif);
 
   /* Mono: tu stack actual (Apple-ish). Si luego cargas JetBrains Mono, lo metes primero */
   --font-mono: var(--font-jetbrains-mono),

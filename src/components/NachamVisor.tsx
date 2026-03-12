@@ -161,8 +161,8 @@ export default function NachamVisor({
                 else if (tipOwner) shadows.push('inset -1px 0 0 rgba(148,163,184,0.65)')
             }
             // Separadores sutiles de inicio/fin de campo para ubicar límites visualmente.
-            if (isFieldStart) shadows.push('inset 1px 0 0 rgba(100,116,139,0.35)')
-            if (isFieldEnd) shadows.push('inset -1px 0 0 rgba(100,116,139,0.35)')
+            if (showSpaces && isFieldStart) shadows.push('inset 1px 0 0 rgba(100,116,139,0.35)')
+            if (showSpaces && isFieldEnd) shadows.push('inset -1px 0 0 rgba(100,116,139,0.35)')
             if (tipOwner) {
                 shadows.push('inset 0 1px 0 rgba(148,163,184,0.45)')
                 shadows.push('inset 0 -1px 0 rgba(148,163,184,0.45)')
@@ -195,7 +195,7 @@ export default function NachamVisor({
 
         const st = lineStatus?.[index] as LineStatus | undefined
         const marks = lineMarks?.[index] ?? []
-        const defs = fieldMap?.[rec?.charAt(0)] || []
+        const defs = showSpaces ? (fieldMap?.[rec?.charAt(0)] || []) : []
         const tips = defs.map((d, idx) => ({
             start: Math.max(0, Number(d.start || 1) - 1),
             end: Math.min(rec.length, Number(d.end || 0)),
@@ -241,7 +241,7 @@ export default function NachamVisor({
                 <span
                     data-line-no="1"
                     className="inline-flex items-center justify-end pr-2 text-[12px] text-slate-400 select-none border-r border-slate-200/70"
-                    style={{ width: "var(--visor-gutter)" }}
+                    style={{ width: "var(--visor-gutter)", fontFamily: "var(--font-sans)" }}
                     title={`Línea ${index + 1}`}
                 >
                     {index + 1}
