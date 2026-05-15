@@ -39,12 +39,34 @@ export default function NachamModal({
     const tableContainerRef = useRef<HTMLDivElement>(null)
     const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
     const [copiedId, setCopiedId] = useState<number | null>(null)
-    // Cerrar con ESC
+
     useEffect(() => {
-        const handler = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
+        if (!isOpen) return
+
+        const handler = (e: KeyboardEvent) => {
+            if (e.altKey || e.ctrlKey || e.metaKey || e.shiftKey) return
+
+            if (e.key === 'Escape') {
+                e.preventDefault()
+                onClose()
+                return
+            }
+
+            if (e.key === 'ArrowLeft' && canPrev) {
+                e.preventDefault()
+                onPrev()
+                return
+            }
+
+            if (e.key === 'ArrowRight' && canNext) {
+                e.preventDefault()
+                onNext()
+            }
+        }
+
         document.addEventListener('keydown', handler)
         return () => document.removeEventListener('keydown', handler)
-    }, [onClose])
+    }, [isOpen, canPrev, canNext, onClose, onPrev, onNext])
 
     // Cuando cambian los campos (campo seleccionado), volvemos el scroll al inicio
     useEffect(() => {

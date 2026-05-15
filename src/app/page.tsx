@@ -713,9 +713,9 @@ export default function Page() {
                 const pr = records[pi]
                 const ts = pr.slice(50, 53).trim()
                 const desc = pr.slice(53, 63).trim()
-                ttl = `🌟 Registro de Adenda de Transacción (${adendaCode})</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+                ttl = `🌟 Registro de Adenda</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
             } else {
-                ttl = `🌟 Registro de Adenda de Transacción (${adendaCode})`
+                ttl = `🌟 Registro de Adenda`
             }
             flds = parseFields(rec)
         } else if (type === '8') {
@@ -943,14 +943,55 @@ export default function Page() {
         setSearchActive(-1)
     }, [])
 
+    const moveFocusedLine = useCallback((direction: 1 | -1) => {
+        if (!records.length) return
+        setFocusedIndex((prev) => {
+            const base = typeof prev === 'number'
+                ? prev
+                : (isOpen ? currentIndex : 0)
+            const next = Math.max(0, Math.min(records.length - 1, base + direction))
+            return next
+        })
+    }, [records.length, isOpen, currentIndex])
+
     useEffect(() => {
         const onKeyDown = (e: KeyboardEvent) => {
+            const target = e.target as HTMLElement | null
+            const tag = (target?.tagName || '').toLowerCase()
+            const isTypingTarget =
+                !!target &&
+                (target.isContentEditable ||
+                    tag === 'input' ||
+                    tag === 'textarea' ||
+                    tag === 'select')
+
             const isFind = (e.key === 'f' || e.key === 'F') && (e.metaKey || e.ctrlKey)
             if (isFind) {
                 e.preventDefault()
                 setSearchOpen(true)
                 return
             }
+
+            if (isTypingTarget) return
+
+            if (!isOpen && records.length) {
+                if (e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    moveFocusedLine(-1)
+                    return
+                }
+                if (e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    moveFocusedLine(1)
+                    return
+                }
+                if (e.key === 'Enter' && typeof focusedIndex === 'number' && isRecordTypeClickable(focusedIndex)) {
+                    e.preventDefault()
+                    handleRowClick(focusedIndex)
+                    return
+                }
+            }
+
             if (e.key === 'F3') {
                 e.preventDefault()
                 jumpSearch(e.shiftKey ? -1 : 1)
@@ -958,7 +999,7 @@ export default function Page() {
         }
         window.addEventListener('keydown', onKeyDown)
         return () => window.removeEventListener('keydown', onKeyDown)
-    }, [jumpSearch])
+    }, [focusedIndex, handleRowClick, isOpen, isRecordTypeClickable, jumpSearch, moveFocusedLine, records.length])
 
     const updateFloatingRuler = useCallback((clientX: number) => {
         if (!rulerEnabled) return
