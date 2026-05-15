@@ -3,6 +3,7 @@ import './globals.css'
 import { Work_Sans, JetBrains_Mono } from "next/font/google";
 import { ReactNode } from 'react'
 import Script from 'next/script'
+import { Analytics } from '@vercel/analytics/next'
 
 const workSans = Work_Sans({
   subsets: ["latin"],
@@ -84,6 +85,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             © {new Date().getFullYear()} Módulo IOB SIIF G3 <span className="inline-block animate-heart text-red-500">❤️</span>
           </footer>
         </div>
+        <Analytics />
       </body>
     </html>
   )
