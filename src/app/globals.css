@@ -93,6 +93,15 @@ body {
   font-family: var(--font-sans) !important;
 }
 
+/*
+  Evita que navegadores con auto-dark/alto contraste reinterpreten
+  superficies críticas del visor y cambien el color percibido del texto.
+*/
+.browser-theme-locked {
+  color-scheme: only light;
+  forced-color-adjust: none;
+}
+
 /* =========================
    Tu CSS existente
    ========================= */

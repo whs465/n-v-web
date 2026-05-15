@@ -171,7 +171,7 @@ export default function NachamVisor({
             chunks.push(
                 <span
                     key={`${s}-${e}`}
-                    className={`${bg} ${tipOwner ? 'rounded-[2px]' : ''}`}
+                    className={`${bg} ${tipOwner ? 'rounded-[2px]' : ''} text-slate-900`}
                     style={shadows.length ? { boxShadow: shadows.join(', ') } : undefined}
                     title={title}
                 >
@@ -230,7 +230,7 @@ export default function NachamVisor({
         return (
             <div
                 style={rowStyle}
-                className={`flex w-max visor-mono whitespace-pre overflow-hidden
+                className={`flex w-max visor-mono whitespace-pre overflow-hidden text-slate-900
   ${canOpen ? 'cursor-pointer hover:bg-[rgb(228,242,251)]' : 'cursor-not-allowed opacity-80'}
   ${rowBg}`}
 
@@ -240,7 +240,7 @@ export default function NachamVisor({
             >
                 <span
                     data-line-no="1"
-                    className="inline-flex items-center justify-end pr-2 text-[12px] text-slate-400 select-none border-r border-slate-200/70"
+                    className="inline-flex items-center justify-end pr-2 text-[12px] text-slate-500 select-none border-r border-slate-200/70"
                     style={{ width: "var(--visor-gutter)", fontFamily: "var(--font-sans)" }}
                     title={`Línea ${index + 1}`}
                 >
@@ -256,7 +256,7 @@ export default function NachamVisor({
         <List
             ref={listRef}
             outerRef={outerRef}
-            className="rounded shadow font-mono bg-white"
+            className="browser-theme-locked rounded shadow font-mono bg-white text-slate-900"
             height={height}
             itemCount={records.length}
             itemSize={lineHeight}
