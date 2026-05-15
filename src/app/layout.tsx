@@ -1,8 +1,8 @@
 // src/app/layout.tsx
 import './globals.css'
+import { Analytics } from "@vercel/analytics/next";
 import { Work_Sans, JetBrains_Mono } from "next/font/google";
 import { ReactNode } from 'react'
-import Script from 'next/script'
 
 const workSans = Work_Sans({
   subsets: ["latin"],
@@ -31,23 +31,6 @@ export const metadata = {
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <html lang="es" className={`${workSans.variable} ${jetbrainsMono.variable}`}>
-      <Script
-        id="gtm-head"
-        strategy="afterInteractive"
-        dangerouslySetInnerHTML={{
-          __html: `
-            (function(w,d,s,l,i){
-              w[l]=w[l]||[];
-              w[l].push({'gtm.start': new Date().getTime(), event:'gtm.js'});
-              var f=d.getElementsByTagName(s)[0],
-                  j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';
-              j.async=true;
-              j.src='https://www.googletagmanager.com/gtm.js?id='+i+dl;
-              f.parentNode.insertBefore(j,f);
-            })(window,document,'script','dataLayer','G-DJC85LJVNM');
-          `,
-        }}
-      />
       <body className="bg-gray-100 text-gray-800 overflow-y-scroll relative">
         {/* Fondo */}
         <div className="absolute inset-0 bg-white dark:bg-gray-950 -z-10">
@@ -84,6 +67,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
             © {new Date().getFullYear()} Módulo IOB SIIF G3 <span className="inline-block animate-heart text-red-500">❤️</span>
           </footer>
         </div>
+        <Analytics />
       </body>
     </html>
   )
