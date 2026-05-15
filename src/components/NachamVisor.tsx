@@ -29,6 +29,7 @@ interface NachamVisorProps {
     isClickable?: (idx: number, rec: string) => boolean
     onScrollerReady?: (el: HTMLDivElement) => void
     showSpaces?: boolean
+    activeBatchRange?: { start: number; end: number } | null
 }
 
 export default function NachamVisor({
@@ -44,7 +45,8 @@ export default function NachamVisor({
     fieldMap,
     isClickable,
     onScrollerReady,
-    showSpaces = true
+    showSpaces = true,
+    activeBatchRange = null
 }: NachamVisorProps) {
     const listRef = useRef<List>(null)
 
@@ -206,6 +208,7 @@ export default function NachamVisor({
 
         const baseZebra = index % 2 ? 'bg-gray-50' : 'bg-white'
         const paintFromHere = badFromIndex !== null && index >= badFromIndex
+        const isInActiveBatch = !!activeBatchRange && index >= activeBatchRange.start && index <= activeBatchRange.end
 
         const rowBg = isSelected
             ? 'selected-row'
@@ -213,7 +216,9 @@ export default function NachamVisor({
                 ? 'bg-rose-200'
                 : paintFromHere
                     ? 'bg-rose-50'
-                    : baseZebra
+                    : isInActiveBatch
+                        ? (index % 2 ? 'bg-sky-50' : 'bg-blue-50/70')
+                        : baseZebra
 
         // tooltip general si no hay marcas finas
         const rowTitle =
@@ -240,7 +245,7 @@ export default function NachamVisor({
             >
                 <span
                     data-line-no="1"
-                    className="inline-flex items-center justify-end pr-2 text-[12px] text-slate-500 select-none border-r border-slate-200/70"
+                    className="inline-flex items-center justify-end pr-2 text-[12px] font-normal tabular-nums text-slate-500 select-none border-r border-slate-200/70"
                     style={{ width: "var(--visor-gutter)", fontFamily: "var(--font-sans)" }}
                     title={`Línea ${index + 1}`}
                 >

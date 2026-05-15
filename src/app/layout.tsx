@@ -81,7 +81,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
               sticky bottom-0 left-0
               w-full
               py-2 text-center text-gray-500 text-xs font-sans">
-            © {new Date().getFullYear()} IOB Suite <span className="inline-block animate-heart text-red-500">❤️</span> MHCP
+            © {new Date().getFullYear()} Módulo IOB SIIF G3 <span className="inline-block animate-heart text-red-500">❤️</span>
           </footer>
         </div>
       </body>

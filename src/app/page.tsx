@@ -846,6 +846,12 @@ export default function Page() {
     }
 
     const selectedLineIndex = isOpen ? currentIndex : focusedIndex
+    const activeBatchRange = useMemo(() => {
+        if (typeof selectedLineIndex !== 'number') return null
+        return treeSummary.batches.find(
+            (batch) => selectedLineIndex >= batch.start && selectedLineIndex <= batch.end
+        ) || null
+    }, [selectedLineIndex, treeSummary.batches])
     const mergedLineMarks = useMemo(() => {
         if (!records.length) return lineMarks
         const base: { start: number; end: number; type: 'error' | 'ok' | 'info'; note?: string }[][] =
@@ -1245,7 +1251,11 @@ export default function Page() {
                                             key={`${batch.batchNo}-${batch.start}`}
                                             type="button"
                                             onClick={() => jumpToBatch(batch.start)}
-                                            className={`w-full text-left rounded-lg border p-2 transition ${selectedLineIndex === batch.start ? 'border-blue-400 bg-blue-50' : 'border-slate-200 bg-slate-50 hover:bg-slate-100'}`}
+                                            className={`w-full text-left rounded-lg border p-2 transition ${
+                                                activeBatchRange?.start === batch.start
+                                                    ? 'border-blue-500 bg-blue-50 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)]'
+                                                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                                            }`}
                                         >
                                             <div className="flex items-center justify-between">
                                                 <div className="font-semibold text-slate-900">{batch.id || `Lote ${batch.batchNo}`}</div>
@@ -1400,6 +1410,7 @@ export default function Page() {
                                     isClickable={isClickable}
                                     onScrollerReady={(el) => setNachamScrollerEl(el)}
                                     showSpaces={showSpaces}
+                                    activeBatchRange={activeBatchRange}
                                 />
                             </div>
                         </div>
