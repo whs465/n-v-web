@@ -708,11 +708,14 @@ export default function Page() {
             flds = parseFields(rec)
         } else if (type === '7') {
             const pi = findParentRecord(idx, '5')
+            const adendaCode = rec.slice(1, 3).trim() || '--'
             if (pi !== null) {
                 const pr = records[pi]
                 const ts = pr.slice(50, 53).trim()
                 const desc = pr.slice(53, 63).trim()
-                ttl = `🌟 Registro de Adenda de Transacción</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+                ttl = `🌟 Registro de Adenda de Transacción (${adendaCode})</br>✨ <span style="color:#3b82f6;">Tipo de Servicio:</span> ${ts} &nbsp;&nbsp;&nbsp;&nbsp; <span style="color:#3b82f6;">Descripción:</span> ${desc}`
+            } else {
+                ttl = `🌟 Registro de Adenda de Transacción (${adendaCode})`
             }
             flds = parseFields(rec)
         } else if (type === '8') {

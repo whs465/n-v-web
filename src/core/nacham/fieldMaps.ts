@@ -73,7 +73,19 @@ const BASE_FIELD_MAP: FieldMap = {
 
 const OVERRIDES: Record<FileProfile, Partial<FieldMap>> = {
   default: {},
-  ppd_prenotific: {},
+  ppd_prenotific: {
+    "7": [
+      { name: "Tipo de registro", start: 1, end: 1 },
+      { name: "Código tipo de registro adenda (05)", start: 2, end: 3 },
+      { name: "Identificación del cliente originador", start: 4, end: 16 },
+      { name: "Identificación del cliente originador", start: 17, end: 46 },
+      { name: "Descripción detalle del registro adenda", start: 47, end: 62 },
+      { name: "Reservado", start: 63, end: 83 },
+      { name: "Numero de secuencia de registro adenda", start: 84, end: 87 },
+      { name: "Numero de secuencia de registro detalle", start: 88, end: 94 },
+      { name: "Reservado", start: 95, end: 106 },
+    ],
+  },
   ppd_devolucion: {
     "7": [
       { name: "Tipo de registro", start: 1, end: 1 },
@@ -155,4 +167,3 @@ export const FIELD_MAPS: Record<FileProfile, FieldMap> = {
   ctx_pagos: buildFieldMap(OVERRIDES.ctx_pagos),
   ppd_pagos: buildFieldMap(OVERRIDES.ppd_pagos),
 };
-

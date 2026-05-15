@@ -105,6 +105,9 @@ function getAllowedClassesForLot(ts: string, lotClass: string, desc: string) {
   if ((t === 'PPD' || t === 'CTX') && c === '220' && d.startsWith('PRENOTIFIC')) {
     return { allowed: new Set(['33', '23', '53']), label: 'PPD/CTX 220 PRENOTIFIC → {33,23,53}' }
   }
+  if (t === 'PPD' && c === '225' && d.startsWith('PRENOTIFIC')) {
+    return { allowed: new Set(['28', '38', '57']), label: 'PPD 225 PRENOTIFIC → {28,38,57}' }
+  }
   if ((t === 'PPD' || t === 'CTX') && c === '220' && d.startsWith('PAGOS')) {
     return { allowed: new Set(['32', '22', '52']), label: 'PPD/CTX 220 PAGOS → {32,22,52}' }
   }
@@ -222,6 +225,8 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let lotIsPpdPagos = false
   let lotIsCtxPagos = false
   let lotIsPpdTraslados = false
+  let lotIsPpd = false
+  let lotRequiresAdenda7 = false
   let lotExpectedClassPpd = null
   let lotExpected6Code = null
   let lotExpected6Digit = null
@@ -234,8 +239,10 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let lotSeq5Raw = ''
   let lotRef5_84_91 = ''
   let prevPrenotificFirst6Seq = null
-  let currentPpdPagos6Index = null
-  let currentPpdPagos7Count = 0
+  let currentPpd6Index = null
+  let currentPpd6Expected7Count = 0
+  let currentPpd6Actual7Count = 0
+  let currentPpd6AdendaIndicator = ''
   let fileCount5 = 0
   let fileCount6 = 0
   let fileCount7 = 0
@@ -243,14 +250,22 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let fileSumDeb8 = 0n
   let fileSumCred8 = 0n
 
-  function finalizePpdPagos6PairValidation() {
-    if (currentPpdPagos6Index === null) return
-    const pairOk = currentPpdPagos7Count === 1
-    const pairNote = buildExpectedActualNote('1 reg 7 asociado', String(currentPpdPagos7Count))
-    setValidationMark(currentPpdPagos6Index, 13, 29, pairOk ? 'ok' : 'error', pairOk ? '' : pairNote)
-    if (!pairOk) validationErrorCount += 1
-    currentPpdPagos6Index = null
-    currentPpdPagos7Count = 0
+  function finalizePpd6AdendaValidation() {
+    if (currentPpd6Index === null) return
+    const expectedIndicator = currentPpd6Expected7Count > 0 ? '1' : '0'
+    const indicatorDisplay = currentPpd6AdendaIndicator === '' ? '(vacío)' : currentPpd6AdendaIndicator
+    const indicatorOk = currentPpd6AdendaIndicator === expectedIndicator
+    const countOk = currentPpd6Actual7Count === currentPpd6Expected7Count
+    const adendaOk = indicatorOk && countOk
+    const adendaNote = buildExpectedActualNote(expectedIndicator, indicatorDisplay) +
+      ' · Reg 7 esperados: ' + String(currentPpd6Expected7Count) +
+      ' · Reg 7 actuales: ' + String(currentPpd6Actual7Count)
+    setValidationMark(currentPpd6Index, 87, 87, adendaOk ? 'ok' : 'error', adendaOk ? '' : adendaNote)
+    if (!adendaOk) validationErrorCount += 1
+    currentPpd6Index = null
+    currentPpd6Expected7Count = 0
+    currentPpd6Actual7Count = 0
+    currentPpd6AdendaIndicator = ''
   }
 
   const headerIndex = recordsData.findIndex((r) => r && r.type === '1')
@@ -290,7 +305,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   for (let i = 0; i < limit; i++) {
     const rec = recordsData[i]
     if (rec.type === '5') {
-      finalizePpdPagos6PairValidation()
+      finalizePpd6AdendaValidation()
       fileCount5 += 1
       lotOpen = true
       const rawRef5 = String(rec.raw.slice(83, 91) || '').padEnd(8, ' ').slice(0, 8)
@@ -323,7 +338,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       if (doy === null) {
         setValidationMark(i, 72, 79, 'error')
         validationErrorCount += 1
-        setValidationMark(i, 80, 82, 'error')
+        setValidationMark(i, 80, 82, 'error', buildExpectedActualNote('día juliano calculado desde una fecha válida en 72-79', julianStr))
         validationErrorCount += 1
       } else {
         setValidationMark(i, 72, 79, 'ok')
@@ -331,7 +346,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
         if (julianStr === expectedJulian) {
           setValidationMark(i, 80, 82, 'ok')
         } else {
-          setValidationMark(i, 80, 82, 'error')
+          setValidationMark(i, 80, 82, 'error', buildExpectedActualNote(expectedJulian, julianStr))
           validationErrorCount += 1
         }
       }
@@ -341,10 +356,12 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       const lotClassDisplay = String(lotClass || '').padEnd(3, ' ').slice(0, 3)
       const desc = rec.raw.slice(53, 63)
       lotRule = getAllowedClassesForLot(ts, lotClass, desc)
+      lotIsPpd = normText(ts) === 'PPD'
       lotIsPpdPrenotific = normText(ts) === 'PPD' && normText(desc).startsWith('PRENOTIFIC')
       lotIsPpdPagos = normText(ts) === 'PPD' && normText(desc).startsWith('PAGOS')
       lotIsCtxPagos = normText(ts) === 'CTX' && normText(desc).startsWith('PAGOS')
       lotIsPpdTraslados = normText(ts) === 'PPD' && normText(desc).startsWith('TRASLADOS')
+      lotRequiresAdenda7 = lotIsPpd && !(lotIsPpdPrenotific && lotClassDisplay === '220')
       if (lotIsPpdTraslados) {
         const expected5_41_50 = '8999990902'
         const actual5_41_50 = String(rec.raw.slice(40, 50) || '').padEnd(10, ' ').slice(0, 10)
@@ -354,10 +371,16 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       }
       lotExpectedClassPpd = null
       if (normText(ts) === 'PPD' || lotIsCtxPagos) {
-        lotExpectedClassPpd = (normText(ts) === 'PPD' && lotIsPpdTraslados) ? '225' : '220'
-        const classOk5 = lotClassDisplay === lotExpectedClassPpd
-        setValidationMark(i, 2, 4, classOk5 ? 'ok' : 'error', buildExpectedActualNote(lotExpectedClassPpd, lotClassDisplay))
+        const expectedClassOptions =
+          lotIsCtxPagos ? ['220'] :
+          lotIsPpdTraslados ? ['225'] :
+          lotIsPpdPrenotific ? ['220', '225'] :
+          ['220']
+        const classOk5 = expectedClassOptions.includes(lotClassDisplay)
+        const expectedClassLabel = expectedClassOptions.join(' o ')
+        setValidationMark(i, 2, 4, classOk5 ? 'ok' : 'error', buildExpectedActualNote(expectedClassLabel, lotClassDisplay))
         if (!classOk5) validationErrorCount += 1
+        lotExpectedClassPpd = classOk5 ? lotClassDisplay : (expectedClassOptions.length === 1 ? expectedClassLabel : null)
       }
       lotExpected6Code = null
       lotExpected6Digit = null
@@ -369,7 +392,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
     }
 
     if (rec.type === '6') {
-      finalizePpdPagos6PairValidation()
+      finalizePpd6AdendaValidation()
       fileCount6 += 1
       if (!lotOpen) continue
       lotCount6 += 1
@@ -468,19 +491,23 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
 
       expectedSeq7By6 = 1
       expectedCtx7CodeBy6 = null
-      if (lotIsPpdPagos) {
-        currentPpdPagos6Index = i
-        currentPpdPagos7Count = 0
+      if (lotIsPpd) {
+        currentPpd6Index = i
+        currentPpd6Expected7Count = lotRequiresAdenda7 ? 1 : 0
+        currentPpd6Actual7Count = 0
+        currentPpd6AdendaIndicator = String(rec.raw.slice(86, 87) || '')
       } else {
-        currentPpdPagos6Index = null
-        currentPpdPagos7Count = 0
+        currentPpd6Index = null
+        currentPpd6Expected7Count = 0
+        currentPpd6Actual7Count = 0
+        currentPpd6AdendaIndicator = ''
       }
     }
 
     if (rec.type === '7') {
       fileCount7 += 1
       if (lotOpen) lotCount7 += 1
-      if (lotIsPpdPagos && currentPpdPagos6Index !== null) currentPpdPagos7Count += 1
+      if (lotIsPpd && currentPpd6Index !== null) currentPpd6Actual7Count += 1
 
       const rawType7Code = rec.raw.slice(1, 3)
       const actualType7Code = String(rawType7Code || '').padEnd(2, ' ').slice(0, 2)
@@ -541,7 +568,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
         if (!ok7_17_46) validationErrorCount += 1
       }
     } else if (rec.type !== '6') {
-      if (rec.type !== '7') finalizePpdPagos6PairValidation()
+      if (rec.type !== '7') finalizePpd6AdendaValidation()
       expectedSeq7By6 = null
       expectedCtx7CodeBy6 = null
       if (rec.type !== '7') currentSeq6ForAdendas = null
@@ -558,7 +585,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       if (!lotOpen) continue
       const rawCount8 = rec.raw.slice(4, 10)
       const actualCount8 = String(rawCount8 || '').padEnd(6, ' ').slice(0, 6)
-      const expectedTxnCount = (lotIsPpdPagos || lotIsCtxPagos || lotIsPpdTraslados) ? (lotCount6 + lotCount7) : lotCount6
+      const expectedTxnCount = (lotIsPpd || lotIsCtxPagos) ? (lotCount6 + lotCount7) : lotCount6
       const expectedCount8 = String(expectedTxnCount).padStart(6, '0')
       const countOk8 = actualCount8 === expectedCount8
       setValidationMark(i, 5, 10, countOk8 ? 'ok' : 'error', buildExpectedActualNote(expectedCount8, actualCount8))
@@ -652,7 +679,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
     }
   }
 
-  finalizePpdPagos6PairValidation()
+  finalizePpd6AdendaValidation()
 
   if (firstNineIndex >= 0) {
     const r9 = recordsData[firstNineIndex] ? recordsData[firstNineIndex].raw : ''
