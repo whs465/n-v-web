@@ -113,6 +113,21 @@ const OVERRIDES: Record<FileProfile, Partial<FieldMap>> = {
     ],
   },
   ctx_pagos: {
+    "6": [
+      { name: "Tipo de registro", start: 1, end: 1 },
+      { name: "Código clase de transacción por lote", start: 2, end: 3 },
+      { name: "Código participante receptor", start: 4, end: 11 },
+      { name: "Dígito de chequeo", start: 12, end: 12 },
+      { name: "Número de cuenta del receptor", start: 13, end: 29 },
+      { name: "Valor de la transacción", start: 30, end: 47 },
+      { name: "Número de identificación del receptor", start: 48, end: 62 },
+      { name: "Número de registros adenda", start: 63, end: 66 },
+      { name: "Nombre del receptor", start: 67, end: 84 },
+      { name: "Datos discrecionales", start: 85, end: 86 },
+      { name: "Indicador de registro de adenda", start: 87, end: 87 },
+      { name: "Número de secuencia", start: 88, end: 102 },
+      { name: "Reservado", start: 103, end: 106 },
+    ],
     "7": [
       { name: "Tipo de registro", start: 1, end: 1 },
       { name: "Código tipo de registro adenda", start: 2, end: 3 },

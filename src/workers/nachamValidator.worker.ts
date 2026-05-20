@@ -243,6 +243,10 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let currentPpd6Expected7Count = 0
   let currentPpd6Actual7Count = 0
   let currentPpd6AdendaIndicator = ''
+  let currentCtx6Index = null
+  let currentCtx6Expected7Count = null
+  let currentCtx6Actual7Count = 0
+  let currentCtx6Expected7Raw = ''
   let fileCount5 = 0
   let fileCount6 = 0
   let fileCount7 = 0
@@ -266,6 +270,23 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
     currentPpd6Expected7Count = 0
     currentPpd6Actual7Count = 0
     currentPpd6AdendaIndicator = ''
+  }
+
+  function finalizeCtx6AdendaValidation() {
+    if (currentCtx6Index === null) return
+    const expectedRawDisplay = String(currentCtx6Expected7Raw || '').padEnd(4, ' ').slice(0, 4)
+    const actualDisplay = String(currentCtx6Actual7Count).padStart(4, '0')
+    const countOk = currentCtx6Expected7Count !== null && currentCtx6Actual7Count === currentCtx6Expected7Count
+    const expectedDisplay = currentCtx6Expected7Count === null ? '4 dígitos numéricos' : String(currentCtx6Expected7Count).padStart(4, '0')
+    const adendaNote = buildExpectedActualNote(expectedDisplay, currentCtx6Expected7Count === null ? expectedRawDisplay : actualDisplay) +
+      ' · Reg 7 esperados por 6[63-66]: ' + expectedDisplay +
+      ' · Reg 7 actuales: ' + String(currentCtx6Actual7Count)
+    setValidationMark(currentCtx6Index, 63, 66, countOk ? 'ok' : 'error', countOk ? '' : adendaNote)
+    if (!countOk) validationErrorCount += 1
+    currentCtx6Index = null
+    currentCtx6Expected7Count = null
+    currentCtx6Actual7Count = 0
+    currentCtx6Expected7Raw = ''
   }
 
   const headerIndex = recordsData.findIndex((r) => r && r.type === '1')
@@ -306,6 +327,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
     const rec = recordsData[i]
     if (rec.type === '5') {
       finalizePpd6AdendaValidation()
+      finalizeCtx6AdendaValidation()
       fileCount5 += 1
       lotOpen = true
       const rawRef5 = String(rec.raw.slice(83, 91) || '').padEnd(8, ' ').slice(0, 8)
@@ -412,6 +434,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       if (currentSeq6 !== null && !Number.isNaN(currentSeq6)) prevSeq6 = currentSeq6
       currentSeq6ForAdendas = currentSeq6
 
+      finalizeCtx6AdendaValidation()
       if (lotRule.allowed) {
         const cls = rec.raw.slice(1, 3)
         const isAllowed = lotRule.allowed.has(cls)
@@ -502,12 +525,27 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
         currentPpd6Actual7Count = 0
         currentPpd6AdendaIndicator = ''
       }
+
+      if (lotIsCtxPagos) {
+        const rawCtxAdendaCount = rec.raw.slice(62, 66)
+        const rawCtxAdendaCountDisplay = String(rawCtxAdendaCount || '').padEnd(4, ' ').slice(0, 4)
+        currentCtx6Index = i
+        currentCtx6Expected7Raw = rawCtxAdendaCountDisplay
+        currentCtx6Expected7Count = /^\d{4}$/.test(rawCtxAdendaCountDisplay) ? Number.parseInt(rawCtxAdendaCountDisplay, 10) : null
+        currentCtx6Actual7Count = 0
+      } else {
+        currentCtx6Index = null
+        currentCtx6Expected7Raw = ''
+        currentCtx6Expected7Count = null
+        currentCtx6Actual7Count = 0
+      }
     }
 
     if (rec.type === '7') {
       fileCount7 += 1
       if (lotOpen) lotCount7 += 1
       if (lotIsPpd && currentPpd6Index !== null) currentPpd6Actual7Count += 1
+      if (lotIsCtxPagos && currentCtx6Index !== null) currentCtx6Actual7Count += 1
 
       const rawType7Code = rec.raw.slice(1, 3)
       const actualType7Code = String(rawType7Code || '').padEnd(2, ' ').slice(0, 2)
@@ -569,6 +607,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       }
     } else if (rec.type !== '6') {
       if (rec.type !== '7') finalizePpd6AdendaValidation()
+      if (rec.type !== '7') finalizeCtx6AdendaValidation()
       expectedSeq7By6 = null
       expectedCtx7CodeBy6 = null
       if (rec.type !== '7') currentSeq6ForAdendas = null
@@ -680,6 +719,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   }
 
   finalizePpd6AdendaValidation()
+  finalizeCtx6AdendaValidation()
 
   if (firstNineIndex >= 0) {
     const r9 = recordsData[firstNineIndex] ? recordsData[firstNineIndex].raw : ''
