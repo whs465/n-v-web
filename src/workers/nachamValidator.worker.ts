@@ -227,6 +227,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let lotIsPpdTraslados = false
   let lotIsPpd = false
   let lotRequiresAdenda7 = false
+  let lotClassDisplayForRules = ''
   let lotExpectedClassPpd = null
   let lotExpected6Code = null
   let lotExpected6Digit = null
@@ -289,8 +290,45 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
     currentCtx6Expected7Raw = ''
   }
 
+  function validateRecordTypeOrder() {
+    let state = 'expect-file-header'
+    let sawFirst9 = false
+    const stateLabel = {
+      'expect-file-header': '1',
+      'expect-batch-header': '5',
+      'expect-entry': '6',
+      'in-batch': '6, 7 u 8',
+      'after-batch': '5 o 9',
+      'after-file-control': 'solo 9 de relleno',
+    }
+
+    for (let i = 0; i < recordsData.length; i++) {
+      const rec = recordsData[i]
+      const t = rec && rec.type ? rec.type : ''
+      let ok = true
+
+      if (sawFirst9) ok = t === '9'
+      else if (state === 'expect-file-header') { ok = t === '1'; if (ok) state = 'expect-batch-header' }
+      else if (state === 'expect-batch-header') { ok = t === '5'; if (ok) state = 'expect-entry' }
+      else if (state === 'expect-entry') { ok = t === '6'; if (ok) state = 'in-batch' }
+      else if (state === 'in-batch') { ok = t === '6' || t === '7' || t === '8'; if (ok && t === '8') state = 'after-batch' }
+      else if (state === 'after-batch') {
+        ok = t === '5' || t === '9'
+        if (ok && t === '5') state = 'expect-entry'
+        if (ok && t === '9') { state = 'after-file-control'; sawFirst9 = true }
+      } else if (state === 'after-file-control') ok = t === '9'
+
+      if (!ok) {
+        const expected = sawFirst9 ? stateLabel['after-file-control'] : (stateLabel[state] || 'tipo válido según estructura')
+        setValidationMark(i, 1, 1, 'error', buildExpectedActualNote(expected, t || '(vacío)') + ' · Secuencia inválida de tipos de registro')
+        validationErrorCount += 1
+      }
+    }
+  }
+
   const headerIndex = recordsData.findIndex((r) => r && r.type === '1')
   const expectedId = calcIdentFromSerial(opts.serialFromName || null)
+  validateRecordTypeOrder()
 
   if (headerIndex >= 0) {
     const blockingFactor = String(recordsData[headerIndex].raw.slice(39, 41) || '').padEnd(2, ' ').slice(0, 2)
@@ -383,6 +421,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       lotIsPpdPagos = normText(ts) === 'PPD' && normText(desc).startsWith('PAGOS')
       lotIsCtxPagos = normText(ts) === 'CTX' && normText(desc).startsWith('PAGOS')
       lotIsPpdTraslados = normText(ts) === 'PPD' && normText(desc).startsWith('TRASLADOS')
+      lotClassDisplayForRules = lotClassDisplay
       lotRequiresAdenda7 = lotIsPpd && !(lotIsPpdPrenotific && lotClassDisplay === '220')
       if (lotIsPpdTraslados) {
         const expected5_41_50 = '8999990902'
@@ -455,6 +494,19 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
       const amount6 = parseBigIntTrimmed(rawAmount6)
       if (amount6 !== null) {
         lotSumAmount6 += amount6
+      }
+
+      const actual6_85_86 = String(rec.raw.slice(84, 86) || '').padEnd(2, ' ').slice(0, 2)
+      const expected6_85_86 = (lotIsPpdPrenotific && lotClassDisplayForRules === '225') ? '  ' : 'V '
+      const ok6_85_86 = actual6_85_86 === expected6_85_86
+      setValidationMark(i, 85, 86, ok6_85_86 ? 'ok' : 'error', buildExpectedActualNote(expected6_85_86 === '  ' ? '(2 espacios)' : expected6_85_86, actual6_85_86.trim() === '' ? '(2 espacios)' : actual6_85_86))
+      if (!ok6_85_86) validationErrorCount += 1
+
+      if (!lotIsPpd) {
+        const actual6_87 = String(rec.raw.slice(86, 87) || '')
+        const ok6_87 = actual6_87 === '1'
+        setValidationMark(i, 87, 87, ok6_87 ? 'ok' : 'error', buildExpectedActualNote('1', actual6_87 || '(vacío)'))
+        if (!ok6_87) validationErrorCount += 1
       }
 
       if (lotIsPpdPrenotific || lotIsPpdPagos || lotIsCtxPagos || lotIsPpdTraslados) {
