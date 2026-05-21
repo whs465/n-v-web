@@ -1193,20 +1193,20 @@ export default function Page() {
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Total Caracteres</div>
-                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length * 106).toLocaleString('es-CO')}</div>
+                                    <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length * 106).toLocaleString('es-CO')}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Total Registros</div>
-                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length).toLocaleString('es-CO')}</div>
+                                    <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(records.length).toLocaleString('es-CO')}</div>
                                 </div>
                                 <div className="rounded-lg border border-slate-200 p-2">
                                     <div className="text-xs text-slate-500">Lotes</div>
-                                    <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.batches.length).toLocaleString('es-CO')}</div>
+                                    <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.batches.length).toLocaleString('es-CO')}</div>
                                 </div>
                                 {Number(treeSummary.totalOrders || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Ordenes de Pago</div>
-                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalOrders).toLocaleString('es-CO')}</div>
+                                        <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalOrders).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {totalPre > 0 && (
@@ -1218,13 +1218,13 @@ export default function Page() {
                                 {Number(treeSummary.totalTransfers || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Registros de Traslado</div>
-                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
+                                        <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {Number(treeSummary.totalTregcontrol || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
                                         <div className="text-xs text-slate-500">Total RC Traslado</div>
-                                        <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTregcontrol).toLocaleString('es-CO')}</div>
+                                        <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTregcontrol).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {hasNonZeroAmount(treeSummary.fileDebitTotal9) && (
@@ -1240,7 +1240,7 @@ export default function Page() {
                                     </div>
                                 )}
                             </div>
-                            <div className="mt-3 flex-1 min-h-0 overflow-auto space-y-2 pr-1 pb-2">
+                            <div className="thin-scroll mt-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-2 pr-3 pb-2 [scrollbar-gutter:stable]">
                                 {treeSummary.batches.map((batch) => {
                                     const errorCount = getBatchErrorCount(batch.start, batch.end)
                                     const preCount = Object.values(batch.prenotificCounts || {}).reduce((acc, val) => acc + Number(val || 0), 0)
@@ -1251,20 +1251,24 @@ export default function Page() {
                                             key={`${batch.batchNo}-${batch.start}`}
                                             type="button"
                                             onClick={() => jumpToBatch(batch.start)}
-                                            className={`w-full text-left rounded-lg border p-2 transition ${
-                                                activeBatchRange?.start === batch.start
-                                                    ? 'border-blue-500 bg-blue-50 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)]'
-                                                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
+                                            className={`relative w-full text-left rounded-lg border p-2 transition ${
+                                                errorCount > 0
+                                                    ? activeBatchRange?.start === batch.start
+                                                        ? 'border-rose-300 bg-rose-50 shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)]'
+                                                        : 'border-rose-200 bg-rose-50/70 hover:bg-rose-100/70'
+                                                    : activeBatchRange?.start === batch.start
+                                                        ? 'border-blue-500 bg-blue-50 shadow-[inset_0_0_0_1px_rgba(59,130,246,0.12)]'
+                                                        : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                                             }`}
                                         >
-                                            <div className="flex items-center justify-between">
+                                            {errorCount > 0 && (
+                                                <span className="absolute top-2 right-2 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[11px] font-semibold shadow-sm">
+                                                    {errorCount}
+                                                </span>
+                                            )}
+                                            <div className="flex items-center justify-between pr-7">
                                                 <div className="font-semibold text-slate-900">{batch.id || `Lote ${batch.batchNo}`}</div>
                                                 <div className="flex items-center gap-2">
-                                                    {errorCount > 0 && (
-                                                        <span className="inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[11px] font-semibold">
-                                                            {errorCount}
-                                                        </span>
-                                                    )}
                                                     <div className="text-xs text-slate-600">{batch.start + 1}-{batch.end + 1}</div>
                                                 </div>
                                             </div>
