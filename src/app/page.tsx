@@ -1246,13 +1246,14 @@ export default function Page() {
                                     const preCount = Object.values(batch.prenotificCounts || {}).reduce((acc, val) => acc + Number(val || 0), 0)
                                     const showDebit = hasNonZeroAmount(batch.debitTotal8)
                                     const showCredit = hasNonZeroAmount(batch.creditTotal8)
+                                    const hasErrors = errorCount > 0
                                     return (
                                         <button
                                             key={`${batch.batchNo}-${batch.start}`}
                                             type="button"
                                             onClick={() => jumpToBatch(batch.start)}
                                             className={`relative w-full text-left rounded-lg border p-2 transition ${
-                                                errorCount > 0
+                                                hasErrors
                                                     ? activeBatchRange?.start === batch.start
                                                         ? 'border-rose-300 bg-rose-50 shadow-[inset_0_0_0_1px_rgba(244,63,94,0.12)]'
                                                         : 'border-rose-200 bg-rose-50/70 hover:bg-rose-100/70'
@@ -1261,12 +1262,12 @@ export default function Page() {
                                                         : 'border-slate-200 bg-slate-50 hover:bg-slate-100'
                                             }`}
                                         >
-                                            {errorCount > 0 && (
+                                            {hasErrors && (
                                                 <span className="absolute top-2 right-2 inline-flex items-center justify-center min-w-5 h-5 px-1 rounded-full bg-rose-600 text-white text-[11px] font-semibold shadow-sm">
                                                     {errorCount}
                                                 </span>
                                             )}
-                                            <div className="flex items-center justify-between pr-7">
+                                            <div className={`flex items-center justify-between ${hasErrors ? 'pr-7' : ''}`}>
                                                 <div className="font-semibold text-slate-900">{batch.id || `Lote ${batch.batchNo}`}</div>
                                                 <div className="flex items-center gap-2">
                                                     <div className="text-xs text-slate-600">{batch.start + 1}-{batch.end + 1}</div>
