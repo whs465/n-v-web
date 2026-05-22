@@ -23,6 +23,7 @@ declare const self: DedicatedWorkerGlobalScope
 const RECORD_LEN = 106
 const VALID_TYPES = new Set(['1', '5', '6', '7', '8', '9'])
 const IDENT_SEQUENCE = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+const PPD_PAGOS_ADENDA_ALLOWED = new Set(['PAGOS', 'NOMINA', 'SUBSIDIOS'])
 
 const defaultOptions: Required<ValidationOptions> = {
   checkTransCount: true,
@@ -244,6 +245,7 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
   let currentPpd6Expected7Count = 0
   let currentPpd6Actual7Count = 0
   let currentPpd6AdendaIndicator = ''
+  let filePpdPagosAdendaText: string | null = null
   let currentCtx6Index = null
   let currentCtx6Expected7Count = null
   let currentCtx6Actual7Count = 0
@@ -643,6 +645,29 @@ async function validateCompact(rawCompact: string, optionsIn: ValidationOptions)
         const codeOk = code4to16 === expectedCtx7CodeBy6
         setValidationMark(i, 4, 16, codeOk ? 'ok' : 'error', buildExpectedActualNote(expectedCtx7CodeBy6, code4to16))
         if (!codeOk) validationErrorCount += 1
+      }
+      if (lotIsPpdPagos) {
+        const raw7_21_30 = String(rec.raw.slice(20, 30) || '').padEnd(10, ' ').slice(0, 10)
+        const actual7_21_30 = normText(raw7_21_30)
+        const actual7_21_30Display = actual7_21_30 || '(vacío)'
+        let ok7_21_30 = PPD_PAGOS_ADENDA_ALLOWED.has(actual7_21_30)
+        let note7_21_30 = buildExpectedActualNote('PAGOS o NOMINA o SUBSIDIOS (después de trim)', actual7_21_30Display)
+        if (ok7_21_30) {
+          if (filePpdPagosAdendaText === null) {
+            filePpdPagosAdendaText = actual7_21_30
+          } else if (actual7_21_30 !== filePpdPagosAdendaText) {
+            ok7_21_30 = false
+            note7_21_30 = buildExpectedActualNote(filePpdPagosAdendaText + ' (mismo valor en todo el archivo)', actual7_21_30Display)
+          }
+        }
+        setValidationMark(
+          i,
+          21,
+          30,
+          ok7_21_30 ? 'ok' : 'error',
+          note7_21_30,
+        )
+        if (!ok7_21_30) validationErrorCount += 1
       }
       if (lotIsPpdTraslados) {
         const expected7_4_16 = '8999990902'.padStart(13, '0')
