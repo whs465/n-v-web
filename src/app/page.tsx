@@ -1188,7 +1188,10 @@ export default function Page() {
             <main className="p-2 space-y-6 overflow-x-auto">
                 {records.length > 0 ? (
                     <div className="w-full overflow-x-auto">
-                    <div className="m-2 mx-auto w-max min-w-[1100px] grid grid-cols-[290px_1080px] gap-3">
+                    <div
+                        className="m-2 mx-auto grid w-max min-w-[1100px] gap-2"
+                        style={{ gridTemplateColumns: '320px fit-content(calc(56px + 106ch + 16px))' }}
+                    >
                         <aside className="rounded-xl border border-slate-200 bg-white p-3 h-[80vh] flex flex-col">
                             <div className="grid grid-cols-2 gap-2">
                                 <div className="rounded-lg border border-slate-200 p-2">
@@ -1211,13 +1214,13 @@ export default function Page() {
                                 )}
                                 {totalPre > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
-                                        <div className="text-xs text-slate-500">Total Prenotificaciones</div>
+                                        <div className="text-xs text-slate-500">Prenotificaciones</div>
                                         <div className="text-2xl font-semibold text-slate-900 text-right tabular-nums">{Number(totalPre).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
                                 {Number(treeSummary.totalTransfers || 0) > 0 && (
                                     <div className="rounded-lg border border-slate-200 p-2">
-                                        <div className="text-xs text-slate-500">Registros de Traslado</div>
+                                        <div className="text-xs text-slate-500">Registros Traslado</div>
                                         <div className="text-xl font-semibold text-slate-900 text-right tabular-nums">{Number(treeSummary.totalTransfers).toLocaleString('es-CO')}</div>
                                     </div>
                                 )}
@@ -1240,7 +1243,7 @@ export default function Page() {
                                     </div>
                                 )}
                             </div>
-                            <div className="thin-scroll mt-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-2 pr-3 pb-2 [scrollbar-gutter:stable]">
+                            <div className="thin-scroll mt-3 flex-1 min-h-0 overflow-y-auto overflow-x-hidden space-y-2 pr-1 pb-2 [scrollbar-gutter:stable]">
                                 {treeSummary.batches.map((batch) => {
                                     const errorCount = getBatchErrorCount(batch.start, batch.end)
                                     const preCount = Object.values(batch.prenotificCounts || {}).reduce((acc, val) => acc + Number(val || 0), 0)
