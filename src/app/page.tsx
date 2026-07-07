@@ -315,6 +315,12 @@ export default function Page() {
         badIndex: number | null     // primer índice problemático
     }
 
+    function hasNachamInitialRecordTypes(compact: string) {
+        return compact.length >= 213
+            && compact[0] === '1'
+            && compact[106] === '5'
+            && compact[212] === '6'
+    }
     function validateNachamStructure(records: string[]): StructureCheck {
         const errs: string[] = []
         let badIndex: number | null = null
@@ -556,6 +562,13 @@ export default function Page() {
             text = text.replace(/^\uFEFF/, '')
             const compact = text.replace(/\r?\n/g, '')
             const recs = compact.match(/.{106}/g) || []
+            if (!hasNachamInitialRecordTypes(compact)) {
+                setFileName(file.name)
+                input.value = ''
+                setIsNachamValid(false)
+                showErrors(['El archivo no es un NACHAM válido.'], 10000)
+                return
+            }
 
             const r0 = recs[0] ?? ''
             const isDevolucionLocal = r0[0] === '1' && /^ ?011111111$/.test(r0.slice(13, 23))
