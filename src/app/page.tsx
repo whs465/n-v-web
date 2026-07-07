@@ -3,6 +3,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react'
 import NachamVisor from '@/components/NachamVisor'
 import NachamModal, { Field } from '@/components/NachamModal'
+import UsageFeedbackSplash from '@/components/UsageFeedbackSplash'
 import * as XLSX from 'xlsx'
 import { useNachamValidator } from '@/hooks/useNachamValidator'
 import {
@@ -1046,6 +1047,8 @@ export default function Page() {
 
     return (
         <>
+            <UsageFeedbackSplash />
+
             {/* Header */}
             <header className="w-full bg-white border-b border-[#BBC2C8] font-sans">
                 <div className="mx-auto w-full max-w-[1396px] px-2 py-2 grid grid-cols-[290px_minmax(0,1fr)] gap-3 items-center">
@@ -1506,3 +1509,4 @@ export default function Page() {
         </>
     )
 }
+
