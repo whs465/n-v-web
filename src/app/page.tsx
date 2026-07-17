@@ -39,6 +39,38 @@ function hasNonZeroAmount(raw: string) {
 
 type SearchHit = { line: number; start: number; end: number }
 
+type FloatingViewerPanel = {
+    x: number
+    y: number
+    width: number
+    height: number
+}
+
+const VIEWER_ONLY_KEY = 'nacham.web.viewerOnly'
+const VIEWER_PANEL_KEY = 'nacham.web.viewerPanel'
+const MIN_FLOATING_VIEWER_WIDTH = 560
+const MIN_FLOATING_VIEWER_HEIGHT = 320
+
+function getDefaultFloatingViewerPanel(): FloatingViewerPanel {
+    if (typeof window === 'undefined') {
+        return { x: 24, y: 72, width: 1120, height: 680 }
+    }
+    const width = Math.min(1120, Math.max(MIN_FLOATING_VIEWER_WIDTH, window.innerWidth - 32))
+    const height = Math.min(720, Math.max(MIN_FLOATING_VIEWER_HEIGHT, window.innerHeight - 112))
+    return { x: 16, y: 72, width, height }
+}
+
+function clampFloatingViewerPanel(panel: FloatingViewerPanel): FloatingViewerPanel {
+    if (typeof window === 'undefined') return panel
+    const maxWidth = Math.max(MIN_FLOATING_VIEWER_WIDTH, window.innerWidth - 16)
+    const maxHeight = Math.max(MIN_FLOATING_VIEWER_HEIGHT, window.innerHeight - 16)
+    const width = Math.min(Math.max(panel.width, MIN_FLOATING_VIEWER_WIDTH), maxWidth)
+    const height = Math.min(Math.max(panel.height, MIN_FLOATING_VIEWER_HEIGHT), maxHeight)
+    const x = Math.min(Math.max(panel.x, 8), Math.max(8, window.innerWidth - 96))
+    const y = Math.min(Math.max(panel.y, 8), Math.max(8, window.innerHeight - 48))
+    return { x, y, width, height }
+}
+
 function slice1(str: string, start1: number, end1: number) {
     return String(str || '').slice(start1 - 1, end1)
 }
@@ -224,6 +256,10 @@ export default function Page() {
     const [searchActive, setSearchActive] = useState(-1)
     const searchInputRef = useRef<HTMLInputElement | null>(null)
     const fileInputRef = useRef<HTMLInputElement | null>(null)
+    const floatingViewerRef = useRef<HTMLDivElement | null>(null)
+    const floatingViewerDragRef = useRef<{ offsetX: number; offsetY: number; pointerId: number } | null>(null)
+    const [viewerOnlyMode, setViewerOnlyMode] = useState(false)
+    const [floatingViewerPanel, setFloatingViewerPanel] = useState<FloatingViewerPanel>(() => getDefaultFloatingViewerPanel())
 
     // Valid/invalid quick state (preflight)
     const [isNachamValid, setIsNachamValid] = useState<boolean | null>(null)
@@ -250,9 +286,23 @@ export default function Page() {
             setRulerEnabled(window.localStorage.getItem('nacham.web.ruler.enabled') === '1')
             const savedSpaces = window.localStorage.getItem('nacham.web.showSpaces')
             setShowSpaces(savedSpaces === null ? false : savedSpaces === '1')
+            setViewerOnlyMode(window.localStorage.getItem(VIEWER_ONLY_KEY) === '1')
+            const savedPanel = window.localStorage.getItem(VIEWER_PANEL_KEY)
+            if (savedPanel) {
+                const parsed = JSON.parse(savedPanel) as Partial<FloatingViewerPanel>
+                if (
+                    typeof parsed.x === 'number' &&
+                    typeof parsed.y === 'number' &&
+                    typeof parsed.width === 'number' &&
+                    typeof parsed.height === 'number'
+                ) {
+                    setFloatingViewerPanel(clampFloatingViewerPanel(parsed as FloatingViewerPanel))
+                }
+            }
         } catch {
             setRulerEnabled(false)
             setShowSpaces(false)
+            setViewerOnlyMode(false)
         }
     }, [])
 
@@ -273,6 +323,46 @@ export default function Page() {
             window.localStorage.setItem('nacham.web.showSpaces', showSpaces ? '1' : '0')
         } catch { }
     }, [showSpaces])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        try {
+            window.localStorage.setItem(VIEWER_ONLY_KEY, viewerOnlyMode ? '1' : '0')
+        } catch { }
+    }, [viewerOnlyMode])
+
+    useEffect(() => {
+        if (typeof window === 'undefined' || !viewerOnlyMode) return
+        try {
+            window.localStorage.setItem(VIEWER_PANEL_KEY, JSON.stringify(floatingViewerPanel))
+        } catch { }
+    }, [floatingViewerPanel, viewerOnlyMode])
+
+    useEffect(() => {
+        if (typeof window === 'undefined') return
+        const handleResize = () => setFloatingViewerPanel((prev) => clampFloatingViewerPanel(prev))
+        window.addEventListener('resize', handleResize)
+        return () => window.removeEventListener('resize', handleResize)
+    }, [])
+
+    useEffect(() => {
+        if (!viewerOnlyMode || !floatingViewerRef.current || typeof ResizeObserver === 'undefined') return
+        const observer = new ResizeObserver(() => {
+            const rect = floatingViewerRef.current?.getBoundingClientRect()
+            if (!rect) return
+            setFloatingViewerPanel((prev) => {
+                const next = clampFloatingViewerPanel({
+                    ...prev,
+                    width: Math.round(rect.width),
+                    height: Math.round(rect.height),
+                })
+                if (Math.abs(next.width - prev.width) < 2 && Math.abs(next.height - prev.height) < 2) return prev
+                return next
+            })
+        })
+        observer.observe(floatingViewerRef.current)
+        return () => observer.disconnect()
+    }, [viewerOnlyMode])
 
     const getMonoCharWidth = useCallback(() => {
         const scroller = nachamScrollerEl
@@ -1044,6 +1134,163 @@ export default function Page() {
         setHoverCol(null)
     }, [])
 
+    const toggleViewerOnlyMode = useCallback(() => {
+        setViewerOnlyMode((prev) => {
+            if (!prev && typeof window !== 'undefined') {
+                let preferred = getDefaultFloatingViewerPanel()
+                try {
+                    const savedPanel = window.localStorage.getItem(VIEWER_PANEL_KEY)
+                    if (savedPanel) {
+                        const parsed = JSON.parse(savedPanel) as Partial<FloatingViewerPanel>
+                        if (
+                            typeof parsed.x === 'number' &&
+                            typeof parsed.y === 'number' &&
+                            typeof parsed.width === 'number' &&
+                            typeof parsed.height === 'number'
+                        ) {
+                            preferred = parsed as FloatingViewerPanel
+                        }
+                    }
+                } catch { }
+                setFloatingViewerPanel(clampFloatingViewerPanel(preferred))
+            }
+            return !prev
+        })
+    }, [])
+
+    const handleFloatingViewerPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        if (e.button !== 0) return
+        const rect = floatingViewerRef.current?.getBoundingClientRect()
+        if (!rect) return
+        floatingViewerDragRef.current = {
+            offsetX: e.clientX - rect.left,
+            offsetY: e.clientY - rect.top,
+            pointerId: e.pointerId,
+        }
+        e.currentTarget.setPointerCapture(e.pointerId)
+    }, [])
+
+    const handleFloatingViewerPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = floatingViewerDragRef.current
+        if (!drag || drag.pointerId !== e.pointerId) return
+        setFloatingViewerPanel((prev) => clampFloatingViewerPanel({
+            ...prev,
+            x: e.clientX - drag.offsetX,
+            y: e.clientY - drag.offsetY,
+        }))
+    }, [])
+
+    const handleFloatingViewerPointerUp = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+        const drag = floatingViewerDragRef.current
+        if (drag?.pointerId === e.pointerId) {
+            floatingViewerDragRef.current = null
+            if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                e.currentTarget.releasePointerCapture(e.pointerId)
+            }
+        }
+    }, [])
+
+    const floatingListHeight = Math.max(220, floatingViewerPanel.height - (searchOpen ? 112 : 58))
+
+    const renderSearchPanel = () => searchOpen ? (
+        <div className="rounded-lg border border-slate-200 bg-white px-2 py-2 flex items-center gap-2">
+            <input
+                ref={searchInputRef}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        e.preventDefault()
+                        jumpSearch(e.shiftKey ? -1 : 1)
+                    } else if (e.key === 'Escape') {
+                        e.preventDefault()
+                        closeSearch()
+                    }
+                }}
+                placeholder="Buscar en archivo..."
+                className="w-[300px] max-w-[40vw] border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400"
+            />
+            <button
+                type="button"
+                onClick={() => jumpSearch(-1)}
+                className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Anterior"
+            >
+                ↑
+            </button>
+            <button
+                type="button"
+                onClick={() => jumpSearch(1)}
+                className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Siguiente"
+            >
+                ↓
+            </button>
+            <span className="text-sm text-slate-600 min-w-[220px]">
+                {searchHits.length && searchActive >= 0
+                    ? `${searchActive + 1} de ${searchHits.length} · Línea ${searchHits[searchActive].line + 1} · Pos ${searchHits[searchActive].start + 1}-${searchHits[searchActive].end}`
+                    : 'Sin búsqueda'}
+            </span>
+            <button
+                type="button"
+                onClick={closeSearch}
+                className="ml-auto w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
+                title="Cerrar búsqueda"
+            >
+                ✕
+            </button>
+        </div>
+    ) : null
+
+    const renderVisorPane = (height: number) => (
+        <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden">
+            <div
+                className="relative h-full bg-white overflow-hidden"
+                style={{ ["--visor-gutter" as any]: "56px" }}
+                onMouseMove={handleVisorMouseMove}
+                onMouseLeave={handleVisorMouseLeave}
+            >
+                {rulerEnabled && rulerVisible && hoverCol !== null && (
+                    <>
+                        <div
+                            className="pointer-events-none absolute top-0 bottom-0 z-20"
+                            style={{
+                                left: `${rulerLeft}px`,
+                                width: '1px',
+                                background: 'rgba(59,130,246,0.55)',
+                            }}
+                        />
+                        <div
+                            className="pointer-events-none absolute z-30 text-[11px] leading-none px-2 py-1 rounded bg-blue-600 text-white shadow"
+                            style={{
+                                left: `${Math.max(4, rulerLeft - 22)}px`,
+                                top: `8px`,
+                            }}
+                        >
+                            Pos {hoverCol}
+                        </div>
+                    </>
+                )}
+                <NachamVisor
+                    records={records}
+                    lineHeight={20}
+                    height={height}
+                    onRowClick={handleRowClick}
+                    selectedIndex={selectedLineIndex}
+                    badFromIndex={badFromIndex}
+                    badRows={[...badRowSet]}
+                    lineStatus={lineStatus}
+                    lineMarks={mergedLineMarks}
+                    fieldMap={activeFieldMap}
+                    isClickable={isClickable}
+                    onScrollerReady={(el) => setNachamScrollerEl(el)}
+                    showSpaces={showSpaces}
+                    activeBatchRange={activeBatchRange}
+                />
+            </div>
+        </div>
+    )
+
     return (
         <>
             {/* Header */}
@@ -1176,6 +1423,29 @@ export default function Page() {
                                         <path d="M16.5 16.5L21 21" />
                                     </svg>
                                 </button>
+                                <button
+                                    type="button"
+                                    onClick={toggleViewerOnlyMode}
+                                    className={`ml-1 p-1 rounded cursor-pointer transition ${viewerOnlyMode ? 'bg-blue-100 text-blue-700 hover:bg-blue-200' : 'hover:bg-gray-200 text-gray-700'}`}
+                                    title={viewerOnlyMode ? 'Volver al layout completo' : 'Enfocar solo el visor'}
+                                    aria-pressed={viewerOnlyMode}
+                                >
+                                    {viewerOnlyMode ? (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M8 3v3a2 2 0 0 1-2 2H3" />
+                                            <path d="M21 8h-3a2 2 0 0 1-2-2V3" />
+                                            <path d="M3 16h3a2 2 0 0 1 2 2v3" />
+                                            <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
+                                        </svg>
+                                    ) : (
+                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                            <path d="M15 3h6v6" />
+                                            <path d="M9 21H3v-6" />
+                                            <path d="M21 3l-7 7" />
+                                            <path d="M3 21l7-7" />
+                                        </svg>
+                                    )}
+                                </button>
                             </div>
                         )}
 
@@ -1200,6 +1470,9 @@ export default function Page() {
             {/* Main */}
             <main className="p-2 space-y-6 overflow-x-auto">
                 {records.length > 0 ? (
+                    viewerOnlyMode ? (
+                        <div className="min-h-[calc(100vh-68px)]" />
+                    ) : (
                     <div className="w-full overflow-x-auto">
                     <div
                         className="m-2 mx-auto grid w-max min-w-[1100px] gap-2"
@@ -1340,104 +1613,12 @@ export default function Page() {
                         </aside>
 
                         <div className="h-[80vh] flex flex-col gap-2">
-                            {searchOpen && (
-                                <div className="rounded-lg border border-slate-200 bg-white px-2 py-2 flex items-center gap-2">
-                                    <input
-                                        ref={searchInputRef}
-                                        value={searchTerm}
-                                        onChange={(e) => setSearchTerm(e.target.value)}
-                                        onKeyDown={(e) => {
-                                            if (e.key === 'Enter') {
-                                                e.preventDefault()
-                                                jumpSearch(e.shiftKey ? -1 : 1)
-                                            } else if (e.key === 'Escape') {
-                                                e.preventDefault()
-                                                closeSearch()
-                                            }
-                                        }}
-                                        placeholder="Buscar en archivo..."
-                                        className="w-[300px] max-w-[40vw] border border-slate-300 rounded px-3 py-1.5 text-sm outline-none focus:border-blue-400"
-                                    />
-                                    <button
-                                        type="button"
-                                        onClick={() => jumpSearch(-1)}
-                                        className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
-                                        title="Anterior"
-                                    >
-                                        ↑
-                                    </button>
-                                    <button
-                                        type="button"
-                                        onClick={() => jumpSearch(1)}
-                                        className="w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
-                                        title="Siguiente"
-                                    >
-                                        ↓
-                                    </button>
-                                    <span className="text-sm text-slate-600 min-w-[220px]">
-                                        {searchHits.length && searchActive >= 0
-                                            ? `${searchActive + 1} de ${searchHits.length} · Línea ${searchHits[searchActive].line + 1} · Pos ${searchHits[searchActive].start + 1}-${searchHits[searchActive].end}`
-                                            : 'Sin búsqueda'}
-                                    </span>
-                                    <button
-                                        type="button"
-                                        onClick={closeSearch}
-                                        className="ml-auto w-8 h-8 rounded border border-slate-300 text-slate-700 hover:bg-slate-100"
-                                        title="Cerrar búsqueda"
-                                    >
-                                        ✕
-                                    </button>
-                                </div>
-                            )}
-                        <div className="flex-1 rounded-xl border border-slate-200 bg-white shadow-md overflow-hidden">
-                            <div
-                                className="relative h-full bg-white overflow-hidden"
-                                style={{ ["--visor-gutter" as any]: "56px" }}
-                                onMouseMove={handleVisorMouseMove}
-                                onMouseLeave={handleVisorMouseLeave}
-                            >
-                                {rulerEnabled && rulerVisible && hoverCol !== null && (
-                                    <>
-                                        <div
-                                            className="pointer-events-none absolute top-0 bottom-0 z-20"
-                                            style={{
-                                                left: `${rulerLeft}px`,
-                                                width: '1px',
-                                                background: 'rgba(59,130,246,0.55)',
-                                            }}
-                                        />
-                                        <div
-                                            className="pointer-events-none absolute z-30 text-[11px] leading-none px-2 py-1 rounded bg-blue-600 text-white shadow"
-                                            style={{
-                                                left: `${Math.max(4, rulerLeft - 22)}px`,
-                                                top: `8px`,
-                                            }}
-                                        >
-                                            Pos {hoverCol}
-                                        </div>
-                                    </>
-                                )}
-                                <NachamVisor
-                                    records={records}
-                                    lineHeight={20}
-                                    height={listHeight}
-                                    onRowClick={handleRowClick}
-                                    selectedIndex={selectedLineIndex}
-                                    badFromIndex={badFromIndex}
-                                    badRows={[...badRowSet]}
-                                    lineStatus={lineStatus}
-                                    lineMarks={mergedLineMarks}
-                                    fieldMap={activeFieldMap}
-                                    isClickable={isClickable}
-                                    onScrollerReady={(el) => setNachamScrollerEl(el)}
-                                    showSpaces={showSpaces}
-                                    activeBatchRange={activeBatchRange}
-                                />
-                            </div>
-                        </div>
+                            {renderSearchPanel()}
+                            {renderVisorPane(listHeight)}
                         </div>
                     </div>
                     </div>
+                    )
                 ) : (
                     <></>
                 )}
@@ -1453,7 +1634,47 @@ export default function Page() {
                     canNext={currentIndex < records.length - 1}
                 />
             </main>
-
+            {records.length > 0 && viewerOnlyMode && (
+                <div
+                    ref={floatingViewerRef}
+                    className="fixed z-40 flex flex-col rounded-xl border border-slate-300 bg-slate-50 shadow-2xl overflow-hidden [resize:both] min-w-[560px] min-h-[320px] max-w-[calc(100vw-16px)] max-h-[calc(100vh-16px)]"
+                    style={{
+                        left: `${floatingViewerPanel.x}px`,
+                        top: `${floatingViewerPanel.y}px`,
+                        width: `${floatingViewerPanel.width}px`,
+                        height: `${floatingViewerPanel.height}px`,
+                    }}
+                >
+                    <div
+                        className="h-10 shrink-0 cursor-move select-none border-b border-slate-300 bg-slate-100 px-3 flex items-center gap-3"
+                        onPointerDown={handleFloatingViewerPointerDown}
+                        onPointerMove={handleFloatingViewerPointerMove}
+                        onPointerUp={handleFloatingViewerPointerUp}
+                        onPointerCancel={handleFloatingViewerPointerUp}
+                    >
+                        <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-slate-800">{fileName || 'Archivo NACHAM'}</div>
+                        </div>
+                        <div className="flex items-center gap-1" onPointerDown={(e) => e.stopPropagation()}>
+                            <button
+                                type="button"
+                                onClick={() => setViewerOnlyMode(false)}
+                                className="w-8 h-8 rounded text-slate-600 hover:bg-white hover:text-slate-900"
+                                title="Volver al layout completo"
+                            >
+                                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="mx-auto">
+                                    <path d="M18 6 6 18" />
+                                    <path d="m6 6 12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div className="min-h-0 flex-1 p-2 flex flex-col gap-2 bg-slate-50">
+                        {renderSearchPanel()}
+                        {renderVisorPane(floatingListHeight)}
+                    </div>
+                </div>
+            )}
             {/* —— Nuevo contenedor de TOASTS (con pausa en hover) —— */}
             <div className="fixed bottom-5 right-5 z-50 space-y-3 w-[min(430px,92vw)]">
                 {toasts.map(t => {

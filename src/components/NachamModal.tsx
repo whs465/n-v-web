@@ -125,7 +125,7 @@ export default function NachamModal({
 
     return (
         <div
-            className="fixed inset-0 flex items-center justify-center bg-[rgba(128,128,128,0.3)]"
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-[rgba(128,128,128,0.3)]"
         >
             <div
                 className="browser-theme-locked m-2 border border-gray-300 rounded-lg shadow-md bg-white p-6 w-full max-w-4xl text-sm text-slate-900"
