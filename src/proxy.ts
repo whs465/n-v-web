@@ -1,7 +1,7 @@
 import type { NextRequest } from 'next/server'
 import { NextResponse } from 'next/server'
 
-const ALLOWED_COUNTRY = 'CO'
+const ALLOWED_COUNTRIES = new Set(['CO', 'GB', 'AE'])
 const UNAVAILABLE_PATH = '/service-unavailable'
 
 export function proxy(request: NextRequest) {
@@ -19,7 +19,7 @@ export function proxy(request: NextRequest) {
 
   // Vercel supplies the country header in production. An absent header is
   // intentionally allowed so local development and non-Vercel previews work.
-  if (!country || country === ALLOWED_COUNTRY) {
+  if (!country || ALLOWED_COUNTRIES.has(country)) {
     return NextResponse.next()
   }
 
