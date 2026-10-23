@@ -648,6 +648,24 @@ export default function Page() {
 
         const file = input.files[0]
         try {
+            const accessResponse = await fetch('/api/file-access', {
+                cache: 'no-store',
+                headers: { Accept: 'application/json' },
+            })
+            const access = accessResponse.ok
+                ? await accessResponse.json() as { allowed?: boolean }
+                : { allowed: false }
+
+            if (access.allowed !== true) {
+                input.value = ''
+                setFileName('')
+                setIsNachamValid(false)
+                showErrors([
+                    'El archivo seleccionado no cumple con la especificación técnica requerida y no puede ser procesado. Verifique su estructura e inténtelo nuevamente.',
+                ], 10000)
+                return
+            }
+
             let text = await file.text()
             text = text.replace(/^\uFEFF/, '')
             const compact = text.replace(/\r?\n/g, '')
